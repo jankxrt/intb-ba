@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Lifedata Kontakte",
-  description: "Kontakte durchsuchen, filtern und verwalten",
+  title: "ABH Index",
+  description: "Ausländerbehörden Index",
 };
 
 export default function RootLayout({
