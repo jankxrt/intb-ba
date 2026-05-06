@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo } from 'react';
 import { supabase, type Lead } from '@/lib/supabase';
+import { useDragScroll } from '@/lib/useDragScroll';
 
 const STATUS_OPTIONS = ['neu', 'kontaktiert', 'antwort', 'abgeschlossen', 'abgelehnt'];
 const VON_OPTIONS = ['Ramin Goo', 'Jan Kortmann', 'Isabel Magallanes', 'Barbara Stasiak'];
@@ -66,6 +67,91 @@ function formatDate(iso: string): string {
 
 type SortField = 'name' | 'stadt' | 'land' | 'status' | 'von' | 'created_at';
 
+function EditLeadModal({ lead, onSave, onCancel }: {
+  lead: Lead;
+  onSave: (updated: Partial<Lead>) => void;
+  onCancel: () => void;
+}) {
+  const [von, setVon] = useState(lead.von ?? '');
+  const [status, setStatus] = useState(lead.status);
+  const [notes, setNotes] = useState(lead.notes ?? '');
+
+  return (
+    <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        className="animate-scale-in relative w-full max-w-md rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 shadow-xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 className="mb-0.5 text-base font-semibold text-[color:var(--foreground)]">Lead bearbeiten</h2>
+        <p className="mb-5 text-sm text-[color:var(--muted)] line-clamp-1">{lead.name}</p>
+
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Zuständig</label>
+            <div className="relative">
+              <select
+                value={von}
+                onChange={e => setVon(e.target.value)}
+                autoFocus
+                className="h-10 w-full appearance-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-3 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
+              >
+                <option value="">Nicht zugewiesen</option>
+                {VON_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Status</label>
+            <div className="relative">
+              <select
+                value={status}
+                onChange={e => setStatus(e.target.value)}
+                className="h-10 w-full appearance-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-3 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
+              >
+                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Anmerkungen</label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Optionale Notizen zum Lead…"
+              rows={3}
+              className="w-full resize-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="h-9 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-4 text-sm font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]"
+          >
+            Abbrechen
+          </button>
+          <button
+            onClick={() => onSave({ von: von || null, status, notes: notes || null })}
+            className="h-9 rounded-md bg-[color:var(--foreground)] px-4 text-sm font-semibold text-[color:var(--background)] transition-opacity hover:opacity-80"
+          >
+            Speichern
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
   return (
     <span className="ml-1 inline-flex flex-col leading-none" aria-hidden="true">
@@ -83,8 +169,10 @@ export default function OutreachPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const dragScroll = useDragScroll();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [editLeadId, setEditLeadId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -107,6 +195,11 @@ export default function OutreachPage() {
   async function updateVon(id: number, von: string | null) {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, von } : l));
     await supabase.from('leads').update({ von }).eq('id', id);
+  }
+
+  async function updateLead(id: number, patch: Partial<Lead>) {
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
+    await supabase.from('leads').update(patch).eq('id', id);
   }
 
   async function deleteLead(id: number) {
@@ -229,7 +322,14 @@ export default function OutreachPage() {
           </div>
         ) : (
           <section className="overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] shadow-sm">
-            <div className="overflow-x-auto">
+            <div
+              ref={dragScroll.ref}
+              className="overflow-x-auto cursor-grab"
+              onMouseDown={dragScroll.onMouseDown}
+              onMouseMove={dragScroll.onMouseMove}
+              onMouseUp={dragScroll.onMouseUp}
+              onMouseLeave={dragScroll.onMouseLeave}
+            >
               <table className="w-full border-collapse text-sm text-[color:var(--muted-strong)]">
                 <thead className="text-left text-xs uppercase tracking-wide text-[color:var(--muted)]">
                   <tr className="bg-[color:var(--surface-muted)]">
@@ -259,6 +359,8 @@ export default function OutreachPage() {
                     <th onClick={() => handleSort('created_at')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 100 }}>
                       <span className="inline-flex items-center">Hinzugefügt <SortIcon active={sortField === 'created_at'} dir={sortDir} /></span>
                     </th>
+                    {/* Anmerkungen */}
+                    <th className="border-b border-[color:var(--border)] px-3 py-3 font-semibold" style={{ minWidth: 180 }}>Anmerkungen</th>
                     <th className="border-b border-[color:var(--border)] px-3 py-3" style={{ minWidth: 80 }} />
                   </tr>
                 </thead>

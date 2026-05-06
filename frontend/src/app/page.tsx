@@ -1,6 +1,76 @@
 "use client";
 import { useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useDragScroll } from '@/lib/useDragScroll';
+
+const VON_OPTIONS = ['Ramin Goo', 'Jan Kortmann', 'Isabel Magallanes', 'Barbara Stasiak'];
+
+function AddLeadModal({ name, onConfirm, onCancel }: {
+  name: string;
+  onConfirm: (von: string | null, notes: string) => void;
+  onCancel: () => void;
+}) {
+  const [von, setVon] = useState('');
+  const [notes, setNotes] = useState('');
+  return (
+    <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        className="animate-scale-in relative w-full max-w-md rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 shadow-xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 className="mb-0.5 text-base font-semibold text-[color:var(--foreground)]">Lead hinzufügen</h2>
+        <p className="mb-5 text-sm text-[color:var(--muted)] line-clamp-1">{name}</p>
+
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Zuständig</label>
+            <div className="relative">
+              <select
+                value={von}
+                onChange={e => setVon(e.target.value)}
+                autoFocus
+                className="h-10 w-full appearance-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-3 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
+              >
+                <option value="">Nicht zugewiesen</option>
+                {VON_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Anmerkungen</label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Optionale Notizen zum Lead…"
+              rows={3}
+              className="w-full resize-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="h-9 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-4 text-sm font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]"
+          >
+            Abbrechen
+          </button>
+          <button
+            onClick={() => onConfirm(von || null, notes)}
+            className="h-9 rounded-md bg-[color:var(--foreground)] px-4 text-sm font-semibold text-[color:var(--background)] transition-opacity hover:opacity-80"
+          >
+            Hinzufügen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ConfirmModal({ count, onConfirm, onCancel }: { count: number; onConfirm: () => void; onCancel: () => void }) {
   return (
@@ -120,6 +190,7 @@ export default function App() {
   const [showAllModal, setShowAllModal] = useState(false);
   const [leadStatus, setLeadStatus] = useState<Map<string, string>>(new Map());
   const [addingLead, setAddingLead] = useState<string | null>(null);
+  const [pendingLeadRow, setPendingLeadRow] = useState<string[] | null>(null);
   const [hideLeads, setHideLeads] = useState(false);
   const [excludedBundeslaender, setExcludedBundeslaender] = useState<Set<string>>(new Set());
   const [sizeFilter, setSizeFilter] = useState<string>('');
@@ -144,7 +215,7 @@ export default function App() {
     });
   }, []);
 
-  async function addLead(row: string[]) {
+  async function addLead(row: string[], von: string | null, notes: string) {
     const name = row[nameIndex]?.trim();
     if (!name || leadStatus.has(name)) return;
     setAddingLead(name);
@@ -157,6 +228,8 @@ export default function App() {
       partei:         row[parteiIndex]?.trim()         || null,
       kontaktdaten:   row[kontaktdatenIndex]?.trim()   || null,
       einwohner:      einwStr ? parseInt(einwStr, 10)  : null,
+      von:            von,
+      notes:          notes || null,
     });
     setLeadStatus(prev => new Map([...prev, [name, 'neu']]));
     setAddingLead(null);
@@ -289,6 +362,8 @@ export default function App() {
     if (index === kontaktdatenIndex) return '220px';
     return '90px';
   }
+
+  const dragScroll = useDragScroll();
 
   function handleSort(colIndex: number) {
     if (sortCol === colIndex) {
@@ -474,7 +549,14 @@ export default function App() {
             </section>
 
             <section className="overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] shadow-sm">
-              <div className="overflow-x-auto">
+              <div
+                ref={dragScroll.ref}
+                className="overflow-x-auto cursor-grab"
+                onMouseDown={dragScroll.onMouseDown}
+                onMouseMove={dragScroll.onMouseMove}
+                onMouseUp={dragScroll.onMouseUp}
+                onMouseLeave={dragScroll.onMouseLeave}
+              >
                 <table className="w-full border-collapse text-sm text-[color:var(--muted-strong)]">
                   <thead className="text-left text-xs uppercase tracking-wide text-[color:var(--muted)]">
                     <tr className="bg-[color:var(--surface-muted)]">
@@ -516,7 +598,7 @@ export default function App() {
                             return (
                               <td className="px-2 py-2.5 align-middle">
                                 <button
-                                  onClick={() => addLead(row)}
+                                  onClick={() => { if (!isLead && !isAdding) setPendingLeadRow(row); }}
                                   disabled={isLead || isAdding}
                                   title={isLead ? 'Bereits als Lead gespeichert' : 'Als Lead hinzufügen'}
                                   className={`inline-flex h-7 items-center justify-center rounded-md border px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)] ${
@@ -698,6 +780,13 @@ export default function App() {
           </>
         )}
       </div>
+      {pendingLeadRow && (
+        <AddLeadModal
+          name={pendingLeadRow[nameIndex]?.trim() ?? ''}
+          onConfirm={(von, notes) => { addLead(pendingLeadRow, von, notes); setPendingLeadRow(null); }}
+          onCancel={() => setPendingLeadRow(null)}
+        />
+      )}
       {showAllModal && (
         <ConfirmModal
           count={finalDisplayRows.length}
