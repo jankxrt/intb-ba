@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import PasswordGate from "./components/PasswordGate";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,19 +29,21 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-[var(--background)] text-[var(--foreground)]">
-        <header className="border-b border-[color:var(--border)] bg-[color:var(--surface)]">
-          <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-6 h-14">
-            <a href="/" className="flex items-center gap-2 text-base font-semibold text-[color:var(--foreground)] hover:opacity-80 transition-opacity">
-              ABH Index
-            </a>
-            <div className="flex items-center gap-1">
-              <a href="/" className="nav-link">Übersicht</a>
-              <a href="/statistics" className="nav-link">Statistik</a>
-              <a href="/outreach" className="nav-link">Outreach</a>
-            </div>
-          </nav>
-        </header>
-        {children}
+        <PasswordGate>
+          <header className="border-b border-[color:var(--border)] bg-[color:var(--surface)]">
+            <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-6 h-14">
+              <a href="/" className="flex items-center gap-2 text-base font-semibold text-[color:var(--foreground)] hover:opacity-80 transition-opacity">
+                ABH Index
+              </a>
+              <div className="flex items-center gap-1">
+                <a href="/" className="nav-link">Übersicht</a>
+                <a href="/statistics" className="nav-link">Statistik</a>
+                <a href="/outreach" className="nav-link">Outreach</a>
+              </div>
+            </nav>
+          </header>
+          {children}
+        </PasswordGate>
       </body>
     </html>
   );

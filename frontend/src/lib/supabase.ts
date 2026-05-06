@@ -16,5 +16,6 @@ export type Lead = {
   einwohner: number | null;
   status: string;
   notes: string | null;
+  von: string | null;
   created_at: string;
 };
