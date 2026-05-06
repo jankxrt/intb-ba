@@ -475,8 +475,19 @@ export default function App() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={validHeaderCount + 1} className="px-3 py-12 text-center text-sm text-[color:var(--muted-strong)]">
-                          Keine Einträge gefunden.
+                        <td colSpan={validHeaderCount + 1} className="px-3 py-12 text-center">
+                          <p className="text-sm font-medium text-[color:var(--foreground)]">Keine Einträge gefunden.</p>
+                          {(searchTerm !== '' || bundeslandFilter !== '' || parteiFilter !== '') && (
+                            <button
+                              onClick={() => { setSearchTerm(''); setBundeslandFilter(''); setParteiFilter(''); setSortCol(null); setSortDir('asc'); }}
+                              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-3 py-1.5 text-xs font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                                <path d="M1 1l8 8M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                              </svg>
+                              Filter zurücksetzen
+                            </button>
+                          )}
                         </td>
                       </tr>
                     )}
