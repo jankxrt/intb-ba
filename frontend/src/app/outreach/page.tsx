@@ -3,24 +3,26 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase, type Lead } from '@/lib/supabase';
 import { useDragScroll } from '@/lib/useDragScroll';
 
-const STATUS_OPTIONS = ['neu', 'kontaktiert', 'antwort', 'abgeschlossen', 'abgelehnt'];
+const STATUS_OPTIONS = ['neu', 'kontaktiert', 'persönlicher kontakt', 'antwort', 'abgeschlossen', 'abgelehnt'];
 const VON_OPTIONS = ['Ramin Goo', 'Jan Kortmann', 'Isabel Magallanes', 'Barbara Stasiak'];
 
 const statusClass: Record<string, string> = {
-  neu:           'bg-blue-50   text-blue-700   border-blue-200   dark:bg-blue-950/40  dark:text-blue-300  dark:border-blue-800',
-  kontaktiert:   'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800',
-  antwort:       'bg-sky-50    text-sky-700    border-sky-200    dark:bg-sky-950/40   dark:text-sky-300   dark:border-sky-800',
-  abgeschlossen: 'bg-green-50  text-green-700  border-green-200  dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
-  abgelehnt:     'bg-red-50    text-red-700    border-red-200    dark:bg-red-950/40   dark:text-red-300   dark:border-red-800',
+  neu:                    'bg-blue-50   text-blue-700   border-blue-200   dark:bg-blue-950/40  dark:text-blue-300  dark:border-blue-800',
+  kontaktiert:            'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800',
+  'persönlicher kontakt': 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800',
+  antwort:                'bg-sky-50    text-sky-700    border-sky-200    dark:bg-sky-950/40   dark:text-sky-300   dark:border-sky-800',
+  abgeschlossen:          'bg-green-50  text-green-700  border-green-200  dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
+  abgelehnt:              'bg-red-50    text-red-700    border-red-200    dark:bg-red-950/40   dark:text-red-300   dark:border-red-800',
 };
 
 function rowStyle(status: string): React.CSSProperties {
   switch (status) {
-    case 'kontaktiert':   return { borderLeft: '3px solid #7c3aed' };
-    case 'antwort':       return { borderLeft: '3px solid #0284c7' };
-    case 'abgeschlossen': return { borderLeft: '3px solid #16a34a' };
-    case 'abgelehnt':     return { borderLeft: '3px solid #dc2626' };
-    default:              return {};
+    case 'kontaktiert':            return { borderLeft: '3px solid #7c3aed' };
+    case 'persönlicher kontakt':   return { borderLeft: '3px solid #ea580c' };
+    case 'antwort':                return { borderLeft: '3px solid #0284c7' };
+    case 'abgeschlossen':          return { borderLeft: '3px solid #16a34a' };
+    case 'abgelehnt':              return { borderLeft: '3px solid #dc2626' };
+    default:                       return {};
   }
 }
 
@@ -75,6 +77,13 @@ function EditLeadModal({ lead, onSave, onCancel }: {
   const [von, setVon] = useState(lead.von ?? '');
   const [status, setStatus] = useState(lead.status);
   const [notes, setNotes] = useState(lead.notes ?? '');
+  const [emails, setEmails] = useState<string[]>(
+    lead.kontaktdaten ? lead.kontaktdaten.split(/[;,]/).map(s => s.trim()).filter(Boolean) : ['']
+  );
+
+  function setEmail(i: number, val: string) { setEmails(prev => prev.map((e, j) => j === i ? val : e)); }
+  function addEmail() { setEmails(prev => [...prev, '']); }
+  function removeEmail(i: number) { setEmails(prev => prev.length > 1 ? prev.filter((_, j) => j !== i) : ['']); }
 
   return (
     <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onCancel}>
@@ -90,58 +99,60 @@ function EditLeadModal({ lead, onSave, onCancel }: {
           <div>
             <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Zuständig</label>
             <div className="relative">
-              <select
-                value={von}
-                onChange={e => setVon(e.target.value)}
-                autoFocus
-                className="h-10 w-full appearance-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-3 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
-              >
+              <select value={von} onChange={e => setVon(e.target.value)} autoFocus
+                className="h-10 w-full appearance-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-3 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]">
                 <option value="">Nicht zugewiesen</option>
                 {VON_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
-              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </div>
           </div>
 
           <div>
             <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Status</label>
             <div className="relative">
-              <select
-                value={status}
-                onChange={e => setStatus(e.target.value)}
-                className="h-10 w-full appearance-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-3 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
-              >
+              <select value={status} onChange={e => setStatus(e.target.value)}
+                className="h-10 w-full appearance-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-3 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]">
                 {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-sm font-medium text-[color:var(--muted-strong)]">E-Mail-Adressen</label>
+              <button type="button" onClick={addEmail} className="inline-flex items-center gap-1 rounded-md border border-[color:var(--border)] px-2 py-0.5 text-xs text-[color:var(--muted)] hover:bg-[color:var(--surface-hover)] transition-colors">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                Hinzufügen
+              </button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {emails.map((email, i) => (
+                <div key={i} className="flex gap-2">
+                  <input type="email" value={email} onChange={e => setEmail(i, e.target.value)} placeholder="email@beispiel.de"
+                    className="h-9 flex-1 rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 font-mono text-xs text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]" />
+                  <button type="button" onClick={() => removeEmail(i)} className="flex h-9 w-9 items-center justify-center rounded-md border border-[color:var(--border)] text-[color:var(--muted)] hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-800 dark:hover:bg-red-950/40 dark:hover:text-red-400 transition-colors">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 
           <div>
             <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Anmerkungen</label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="Optionale Notizen zum Lead…"
-              rows={3}
-              className="w-full resize-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
-            />
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optionale Notizen zum Lead…" rows={3}
+              className="w-full resize-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]" />
           </div>
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="h-9 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-4 text-sm font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]"
-          >
+          <button onClick={onCancel} className="h-9 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-4 text-sm font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]">
             Abbrechen
           </button>
           <button
-            onClick={() => onSave({ von: von || null, status, notes: notes || null })}
+            onClick={() => onSave({ von: von || null, status, notes: notes || null, kontaktdaten: emails.filter(Boolean).join('; ') || null })}
             className="h-9 rounded-md bg-[color:var(--foreground)] px-4 text-sm font-semibold text-[color:var(--background)] transition-opacity hover:opacity-80"
           >
             Speichern
@@ -220,7 +231,7 @@ export default function OutreachPage() {
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(l =>
-        [l.name, l.stadt, l.land, l.partei, l.kontaktdaten, l.status, l.von]
+        [l.name, l.stadt, l.land, l.partei, l.kontaktdaten, l.status, l.von, l.notes]
           .some(v => v && v.toLowerCase().includes(q))
       );
     }
@@ -361,7 +372,7 @@ export default function OutreachPage() {
                     </th>
                     {/* Anmerkungen */}
                     <th className="border-b border-[color:var(--border)] px-3 py-3 font-semibold" style={{ minWidth: 180 }}>Anmerkungen</th>
-                    <th className="border-b border-[color:var(--border)] px-3 py-3" style={{ minWidth: 80 }} />
+                    <th className="border-b border-[color:var(--border)] px-3 py-3" style={{ minWidth: 90 }} />
                   </tr>
                 </thead>
                 <tbody key={filteredLeads.map(l => l.id).join(',')}>
@@ -382,9 +393,13 @@ export default function OutreachPage() {
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         {lead.kontaktdaten ? (
-                          <a href={`mailto:${lead.kontaktdaten}`} className="whitespace-nowrap font-mono text-xs hover:underline">
-                            {lead.kontaktdaten}
-                          </a>
+                          <div className="flex flex-col gap-0.5">
+                            {lead.kontaktdaten.split(/[;,]/).map(e => e.trim()).filter(Boolean).map(email => (
+                              <a key={email} href={`mailto:${email}`} className="whitespace-nowrap font-mono text-xs hover:underline">
+                                {email}
+                              </a>
+                            ))}
+                          </div>
                         ) : (
                           <span className="text-[color:var(--muted)]">—</span>
                         )}
@@ -397,6 +412,13 @@ export default function OutreachPage() {
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         <span className="text-xs tabular-nums text-[color:var(--muted)]">{formatDate(lead.created_at)}</span>
+                      </td>
+                      <td className="px-3 py-2.5 align-middle" style={{ maxWidth: 180 }}>
+                        {lead.notes ? (
+                          <p className="line-clamp-2 text-xs leading-snug text-[color:var(--muted-strong)]">{lead.notes}</p>
+                        ) : (
+                          <span className="text-xs text-[color:var(--muted)]">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         {confirmDeleteId === lead.id ? (
@@ -416,15 +438,26 @@ export default function OutreachPage() {
                             </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => setConfirmDeleteId(lead.id)}
-                            aria-label="Lead entfernen"
-                            className="flex h-7 w-7 items-center justify-center rounded-md text-[color:var(--muted)] transition-colors hover:bg-[color:var(--danger-bg)] hover:text-[color:var(--danger-fg)]"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                              <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-                            </svg>
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setEditLeadId(lead.id)}
+                              aria-label="Lead bearbeiten"
+                              className="flex h-7 w-7 items-center justify-center rounded-md text-[color:var(--muted)] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--foreground)]"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                                <path d="M9.5 2.5l2 2L4 12H2v-2L9.5 2.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(lead.id)}
+                              aria-label="Lead entfernen"
+                              className="flex h-7 w-7 items-center justify-center rounded-md text-[color:var(--muted)] transition-colors hover:bg-[color:var(--danger-bg)] hover:text-[color:var(--danger-fg)]"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                              </svg>
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -461,6 +494,17 @@ export default function OutreachPage() {
           </section>
         )}
       </div>
+      {editLeadId !== null && (() => {
+        const lead = leads.find(l => l.id === editLeadId);
+        if (!lead) return null;
+        return (
+          <EditLeadModal
+            lead={lead}
+            onSave={(patch) => { updateLead(editLeadId, patch); setEditLeadId(null); }}
+            onCancel={() => setEditLeadId(null)}
+          />
+        );
+      })()}
     </main>
   );
 }

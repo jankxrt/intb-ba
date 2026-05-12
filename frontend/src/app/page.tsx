@@ -5,13 +5,16 @@ import { useDragScroll } from '@/lib/useDragScroll';
 
 const VON_OPTIONS = ['Ramin Goo', 'Jan Kortmann', 'Isabel Magallanes', 'Barbara Stasiak'];
 
+const LEAD_STATUS_OPTIONS = ['neu', 'kontaktiert', 'persönlicher kontakt', 'antwort', 'abgeschlossen', 'abgelehnt'];
+
 function AddLeadModal({ name, onConfirm, onCancel }: {
   name: string;
-  onConfirm: (von: string | null, notes: string) => void;
+  onConfirm: (von: string | null, notes: string, status: string) => void;
   onCancel: () => void;
 }) {
   const [von, setVon] = useState('');
   const [notes, setNotes] = useState('');
+  const [status, setStatus] = useState('neu');
   return (
     <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onCancel}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
@@ -42,6 +45,22 @@ function AddLeadModal({ name, onConfirm, onCancel }: {
           </div>
 
           <div>
+            <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Status</label>
+            <div className="relative">
+              <select
+                value={status}
+                onChange={e => setStatus(e.target.value)}
+                className="h-10 w-full appearance-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-3 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)] capitalize"
+              >
+                {LEAD_STATUS_OPTIONS.map(s => <option key={s} value={s} className="capitalize">{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+              </select>
+              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          </div>
+
+          <div>
             <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Anmerkungen</label>
             <textarea
               value={notes}
@@ -61,7 +80,7 @@ function AddLeadModal({ name, onConfirm, onCancel }: {
             Abbrechen
           </button>
           <button
-            onClick={() => onConfirm(von || null, notes)}
+            onClick={() => onConfirm(von || null, notes, status)}
             className="h-9 rounded-md bg-[color:var(--foreground)] px-4 text-sm font-semibold text-[color:var(--background)] transition-opacity hover:opacity-80"
           >
             Hinzufügen
@@ -148,11 +167,16 @@ const partyClassMap: Record<string, string> = {
 const kontaktiertSet = new Set(['Y', 'J', 'YES', 'JA']);
 
 const leadStatusClass: Record<string, string> = {
-  neu:           'bg-blue-50   text-blue-700   border border-blue-200   dark:bg-blue-950/40  dark:text-blue-300  dark:border-blue-800',
-  kontaktiert:   'bg-violet-50 text-violet-700 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800',
-  antwort:       'bg-sky-50    text-sky-700    border border-sky-200    dark:bg-sky-950/40   dark:text-sky-300   dark:border-sky-800',
-  abgeschlossen: 'bg-green-50  text-green-700  border border-green-200  dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
-  abgelehnt:     'bg-red-50    text-red-700    border border-red-200    dark:bg-red-950/40   dark:text-red-300   dark:border-red-800',
+  neu:                   'bg-blue-50   text-blue-700   border border-blue-200   dark:bg-blue-950/40  dark:text-blue-300  dark:border-blue-800',
+  kontaktiert:           'bg-violet-50 text-violet-700 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800',
+  'persönlicher kontakt':'bg-orange-50 text-orange-700 border border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800',
+  antwort:               'bg-sky-50    text-sky-700    border border-sky-200    dark:bg-sky-950/40   dark:text-sky-300   dark:border-sky-800',
+  abgeschlossen:         'bg-green-50  text-green-700  border border-green-200  dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
+  abgelehnt:             'bg-red-50    text-red-700    border border-red-200    dark:bg-red-950/40   dark:text-red-300   dark:border-red-800',
+};
+
+const STATUS_ORDER: Record<string, number> = {
+  neu: 0, kontaktiert: 1, 'persönlicher kontakt': 2, antwort: 3, abgeschlossen: 4, abgelehnt: 5,
 };
 
 type SortDir = 'asc' | 'desc';
@@ -177,6 +201,140 @@ function SortIcon({ col, sortCol, sortDir }: { col: number; sortCol: number | nu
   );
 }
 
+const BUNDESLAENDER = ['Baden-Württemberg','Bayern','Berlin','Brandenburg','Bremen','Hamburg','Hessen','Mecklenburg-Vorpommern','Niedersachsen','Nordrhein-Westfalen','Rheinland-Pfalz','Saarland','Sachsen','Sachsen-Anhalt','Schleswig-Holstein','Thüringen'];
+
+function AddABHModal({ onSave, onCancel }: { onSave: (fields: Record<string, string>) => Promise<void>; onCancel: () => void }) {
+  const [fields, setFields] = useState<Record<string, string>>({ Name: '', Stadt: '', Land: '', Einwohner: '', Partei: '', Adresse: '', Website: '', Telefon: '' });
+  const [emails, setEmails] = useState<string[]>(['']);
+  const [saving, setSaving] = useState(false);
+  const set = (k: string, v: string) => setFields(f => ({ ...f, [k]: v }));
+  const setEmail = (i: number, v: string) => setEmails(em => em.map((e, idx) => idx === i ? v : e));
+  const addEmail = () => setEmails(em => [...em, '']);
+  const removeEmail = (i: number) => setEmails(em => em.filter((_, idx) => idx !== i));
+
+  async function handleSave() {
+    if (!fields.Name.trim() || !fields.Stadt.trim()) return;
+    setSaving(true);
+    await onSave({ ...fields, Kontaktdaten: emails.filter(Boolean).join('; ') });
+    setSaving(false);
+  }
+
+  const inputCls = "h-9 w-full rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]";
+  const labelCls = "mb-1 block text-xs font-medium text-[color:var(--muted-strong)]";
+
+  return (
+    <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div className="animate-scale-in relative w-full max-w-lg rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 shadow-xl overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+        <h2 className="mb-5 text-base font-semibold text-[color:var(--foreground)]">ABH hinzufügen</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2"><label className={labelCls}>Name *</label><input className={inputCls} value={fields.Name} onChange={e => set('Name', e.target.value)} autoFocus /></div>
+          <div><label className={labelCls}>Stadt *</label><input className={inputCls} value={fields.Stadt} onChange={e => set('Stadt', e.target.value)} /></div>
+          <div><label className={labelCls}>Bundesland</label>
+            <div className="relative">
+              <select className={inputCls + ' appearance-none pr-8'} value={fields.Land} onChange={e => set('Land', e.target.value)}>
+                <option value="">–</option>
+                {BUNDESLAENDER.map(bl => <option key={bl} value={bl}>{bl}</option>)}
+              </select>
+              <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </div>
+          </div>
+          <div><label className={labelCls}>Einwohner</label><input className={inputCls} value={fields.Einwohner} onChange={e => set('Einwohner', e.target.value)} placeholder="z.B. 50000" /></div>
+          <div><label className={labelCls}>Partei</label><input className={inputCls} value={fields.Partei} onChange={e => set('Partei', e.target.value)} /></div>
+          <div className="col-span-2"><label className={labelCls}>Adresse</label><input className={inputCls} value={fields.Adresse} onChange={e => set('Adresse', e.target.value)} /></div>
+          <div><label className={labelCls}>Website</label><input className={inputCls} value={fields.Website} onChange={e => set('Website', e.target.value)} /></div>
+          <div><label className={labelCls}>Telefon</label><input className={inputCls} value={fields.Telefon} onChange={e => set('Telefon', e.target.value)} /></div>
+          <div className="col-span-2">
+            <label className={labelCls}>E-Mail Adressen</label>
+            <div className="flex flex-col gap-1.5">
+              {emails.map((em, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <input className={inputCls} value={em} onChange={e => setEmail(i, e.target.value)} placeholder="email@example.com" />
+                  {emails.length > 1 && <button onClick={() => removeEmail(i)} className="h-9 w-9 shrink-0 rounded-md border border-[color:var(--border)] text-[color:var(--muted)] hover:text-red-600 transition-colors text-lg leading-none">–</button>}
+                </div>
+              ))}
+              <button onClick={addEmail} className="self-start text-xs text-[color:var(--muted)] hover:text-[color:var(--foreground)] transition-colors">+ E-Mail hinzufügen</button>
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onCancel} className="h-9 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-4 text-sm font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]">Abbrechen</button>
+          <button onClick={handleSave} disabled={saving || !fields.Name.trim() || !fields.Stadt.trim()} className="h-9 rounded-md bg-[color:var(--foreground)] px-4 text-sm font-semibold text-[color:var(--background)] transition-opacity hover:opacity-80 disabled:opacity-40">
+            {saving ? 'Speichern…' : 'Hinzufügen'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditABHModal({ row, headers, onSave, onCancel }: { row: string[]; headers: string[]; onSave: (originalStadt: string, fields: Record<string, string>) => Promise<void>; onCancel: () => void }) {
+  const get = (key: string) => row[headers.findIndex(h => h.trim() === key)] ?? '';
+  const [fields, setFields] = useState<Record<string, string>>({ Name: get('Name'), Stadt: get('Stadt'), Land: get('Land'), Einwohner: get('Einwohner'), Partei: get('Partei'), Adresse: get('Adresse'), Website: get('Website'), Telefon: get('Telefon') });
+  const [emails, setEmails] = useState<string[]>(() => { const raw = get('Kontaktdaten'); const parts = raw.split(/[;,]/).map(e => e.trim()).filter(Boolean); return parts.length ? parts : ['']; });
+  const [saving, setSaving] = useState(false);
+  const originalStadt = get('Stadt');
+  const set = (k: string, v: string) => setFields(f => ({ ...f, [k]: v }));
+  const setEmail = (i: number, v: string) => setEmails(em => em.map((e, idx) => idx === i ? v : e));
+  const addEmail = () => setEmails(em => [...em, '']);
+  const removeEmail = (i: number) => setEmails(em => em.filter((_, idx) => idx !== i));
+
+  async function handleSave() {
+    setSaving(true);
+    await onSave(originalStadt, { ...fields, Kontaktdaten: emails.filter(Boolean).join('; ') });
+    setSaving(false);
+  }
+
+  const inputCls = "h-9 w-full rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]";
+  const labelCls = "mb-1 block text-xs font-medium text-[color:var(--muted-strong)]";
+
+  return (
+    <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div className="animate-scale-in relative w-full max-w-lg rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 shadow-xl overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+        <h2 className="mb-1 text-base font-semibold text-[color:var(--foreground)]">Eintrag bearbeiten</h2>
+        <p className="mb-5 text-sm text-[color:var(--muted)]">{originalStadt}</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2"><label className={labelCls}>Name</label><input className={inputCls} value={fields.Name} onChange={e => set('Name', e.target.value)} autoFocus /></div>
+          <div><label className={labelCls}>Stadt</label><input className={inputCls} value={fields.Stadt} onChange={e => set('Stadt', e.target.value)} /></div>
+          <div><label className={labelCls}>Bundesland</label>
+            <div className="relative">
+              <select className={inputCls + ' appearance-none pr-8'} value={fields.Land} onChange={e => set('Land', e.target.value)}>
+                <option value="">–</option>
+                {BUNDESLAENDER.map(bl => <option key={bl} value={bl}>{bl}</option>)}
+              </select>
+              <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </div>
+          </div>
+          <div><label className={labelCls}>Einwohner</label><input className={inputCls} value={fields.Einwohner} onChange={e => set('Einwohner', e.target.value)} /></div>
+          <div><label className={labelCls}>Partei</label><input className={inputCls} value={fields.Partei} onChange={e => set('Partei', e.target.value)} /></div>
+          <div className="col-span-2"><label className={labelCls}>Adresse</label><input className={inputCls} value={fields.Adresse} onChange={e => set('Adresse', e.target.value)} /></div>
+          <div><label className={labelCls}>Website</label><input className={inputCls} value={fields.Website} onChange={e => set('Website', e.target.value)} /></div>
+          <div><label className={labelCls}>Telefon</label><input className={inputCls} value={fields.Telefon} onChange={e => set('Telefon', e.target.value)} /></div>
+          <div className="col-span-2">
+            <label className={labelCls}>E-Mail Adressen</label>
+            <div className="flex flex-col gap-1.5">
+              {emails.map((em, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <input className={inputCls} value={em} onChange={e => setEmail(i, e.target.value)} placeholder="email@example.com" />
+                  {emails.length > 1 && <button onClick={() => removeEmail(i)} className="h-9 w-9 shrink-0 rounded-md border border-[color:var(--border)] text-[color:var(--muted)] hover:text-red-600 transition-colors text-lg leading-none">–</button>}
+                </div>
+              ))}
+              <button onClick={addEmail} className="self-start text-xs text-[color:var(--muted)] hover:text-[color:var(--foreground)] transition-colors">+ E-Mail hinzufügen</button>
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onCancel} className="h-9 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-4 text-sm font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]">Abbrechen</button>
+          <button onClick={handleSave} disabled={saving} className="h-9 rounded-md bg-[color:var(--foreground)] px-4 text-sm font-semibold text-[color:var(--background)] transition-opacity hover:opacity-80 disabled:opacity-40">
+            {saving ? 'Speichern…' : 'Speichern'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [data, setData] = useState<string[][]>([]);
   const [error, setError] = useState<string>('');
@@ -194,6 +352,8 @@ export default function App() {
   const [hideLeads, setHideLeads] = useState(false);
   const [excludedBundeslaender, setExcludedBundeslaender] = useState<Set<string>>(new Set());
   const [sizeFilter, setSizeFilter] = useState<string>('');
+  const [showAddABH, setShowAddABH] = useState(false);
+  const [editingRow, setEditingRow] = useState<string[] | null>(null);
 
   useEffect(() => {
     Papa.parse<string[]>('/data/abs_bundesland.csv', {
@@ -215,7 +375,7 @@ export default function App() {
     });
   }, []);
 
-  async function addLead(row: string[], von: string | null, notes: string) {
+  async function addLead(row: string[], von: string | null, notes: string, status: string = 'neu') {
     const name = row[nameIndex]?.trim();
     if (!name || leadStatus.has(name)) return;
     setAddingLead(name);
@@ -230,9 +390,28 @@ export default function App() {
       einwohner:      einwStr ? parseInt(einwStr, 10)  : null,
       von:            von,
       notes:          notes || null,
+      status:         status,
     });
-    setLeadStatus(prev => new Map([...prev, [name, 'neu']]));
+    setLeadStatus(prev => new Map([...prev, [name, status]]));
     setAddingLead(null);
+  }
+
+  async function saveABH(fields: Record<string, string>) {
+    await fetch('/api/abh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
+    Papa.parse<string[]>('/data/abs_bundesland.csv', {
+      download: true, skipEmptyLines: true, encoding: 'ISO-8859-1',
+      complete: (r) => setData(r.data), error: () => {},
+    });
+    setShowAddABH(false);
+  }
+
+  async function editABH(originalStadt: string, fields: Record<string, string>) {
+    await fetch('/api/abh', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stadt: originalStadt, fields }) });
+    Papa.parse<string[]>('/data/abs_bundesland.csv', {
+      download: true, skipEmptyLines: true, encoding: 'ISO-8859-1',
+      complete: (r) => setData(r.data), error: () => {},
+    });
+    setEditingRow(null);
   }
 
   const headers = data.length > 0 ? data[0] : [];
@@ -245,6 +424,16 @@ export default function App() {
   const einwohnerIndex = headers.findIndex(h => h.trim() === 'Einwohner');
   const parteiIndex       = headers.findIndex(h => h.trim() === 'Partei');
   const kontaktdatenIndex = headers.findIndex(h => h.trim() === 'Kontaktdaten');
+  const telefonnIndex     = headers.findIndex(h => h.trim() === 'Telefon');
+  const websiteIndex      = headers.findIndex(h => h.trim() === 'Website');
+  const adresseIndex      = headers.findIndex(h => h.trim() === 'Adresse');
+  const typIndex          = headers.findIndex(h => /^typ(e)?$/i.test(h.trim()));
+
+  function deriveTyp(name: string): 'Stadt' | 'Kreis' | 'N.N.' {
+    if (name.includes('KRV')) return 'Kreis';
+    if (name.includes('STV')) return 'Stadt';
+    return 'N.N.';
+  }
 
   const uniqueBundeslander = Array.from(
     new Set(rows.map(row => row[bundeslandIndex]))
@@ -312,10 +501,16 @@ export default function App() {
       if (aNum === 0) return 1;
       if (bNum === 0) return -1;
       cmp = aNum - bNum;
+    } else if (sortCol === typIndex) {
+      const aTyp = deriveTyp(a[nameIndex] ?? '');
+      const bTyp = deriveTyp(b[nameIndex] ?? '');
+      cmp = aTyp.localeCompare(bTyp, 'de', { sensitivity: 'base' });
     } else if (sortCol === kontaktiertIndex) {
-      const aYes = kontaktiertSet.has(aVal.trim().toUpperCase()) ? 1 : 0;
-      const bYes = kontaktiertSet.has(bVal.trim().toUpperCase()) ? 1 : 0;
-      cmp = aYes - bYes;
+      const aStatus = leadStatus.get(a[nameIndex]?.trim()) ?? '';
+      const bStatus = leadStatus.get(b[nameIndex]?.trim()) ?? '';
+      const aOrd = STATUS_ORDER[aStatus] ?? -1;
+      const bOrd = STATUS_ORDER[bStatus] ?? -1;
+      cmp = aOrd - bOrd;
     } else {
       const emptyValues = new Set(['', '#n/a', 'n/a', 'n.n.', '-']);
       const aEmpty = emptyValues.has(aVal.trim().toLowerCase());
@@ -330,6 +525,8 @@ export default function App() {
   });
 
   const validHeaderCount = headers.filter(h => h.trim() !== '').length;
+  const HIDDEN_COLS = new Set(['Lat', 'Lng', 'Fax', 'LAT', 'LNG', 'FAX']);
+  const visibleColIndices = headers.map((h, i) => i).filter(i => headers[i].trim() !== '' && !HIDDEN_COLS.has(headers[i].trim()));
   const showAll = rowsPerPage === 0;
   const effectiveRows = showAll ? finalDisplayRows.length : rowsPerPage;
   const indexOfLastRow = currentPage * effectiveRows;
@@ -339,11 +536,12 @@ export default function App() {
 
   function leadRowStyle(status: string | undefined): React.CSSProperties {
     switch (status) {
-      case 'kontaktiert':   return { borderLeft: '4px solid #7c3aed' };
-      case 'antwort':       return { borderLeft: '4px solid #0284c7' };
-      case 'abgeschlossen': return { borderLeft: '4px solid #16a34a' };
-      case 'abgelehnt':     return { borderLeft: '4px solid #dc2626' };
-      default:              return {};
+      case 'kontaktiert':           return { borderLeft: '4px solid #7c3aed' };
+      case 'persönlicher kontakt':  return { borderLeft: '4px solid #ea580c' };
+      case 'antwort':               return { borderLeft: '4px solid #0284c7' };
+      case 'abgeschlossen':         return { borderLeft: '4px solid #16a34a' };
+      case 'abgelehnt':             return { borderLeft: '4px solid #dc2626' };
+      default:                      return {};
     }
   }
 
@@ -360,6 +558,8 @@ export default function App() {
     if (index === kontaktiertIndex)  return '80px';
     if (index === parteiIndex)       return '110px';
     if (index === kontaktdatenIndex) return '220px';
+    if (index === telefonnIndex)     return '130px';
+    if (index === websiteIndex)      return '180px';
     return '90px';
   }
 
@@ -384,14 +584,23 @@ export default function App() {
               Suche, filtere und blättere durch die Ausländerbehörden.
             </p>
           </div>
-          {data.length > 0 && (
-            <div className="text-sm text-[color:var(--muted)]">
-              {finalDisplayRows.length !== rows.length
-                ? <><span className="font-medium text-[color:var(--foreground)]">{finalDisplayRows.length}</span> von {rows.length} Einträgen</>
-                : <>{rows.length} Einträge</>
-              }
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {data.length > 0 && (
+              <div className="text-sm text-[color:var(--muted)]">
+                {finalDisplayRows.length !== rows.length
+                  ? <><span className="font-medium text-[color:var(--foreground)]">{finalDisplayRows.length}</span> von {rows.length} Einträgen</>
+                  : <>{rows.length} Einträge</>
+                }
+              </div>
+            )}
+            <button
+              onClick={() => setShowAddABH(true)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[color:var(--border)] bg-[color:var(--surface)] px-3 text-sm font-medium text-[color:var(--foreground)] shadow-sm transition-colors hover:bg-[color:var(--surface-hover)]"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+              ABH hinzufügen
+            </button>
+          </div>
         </header>
 
         {error && (
@@ -561,7 +770,8 @@ export default function App() {
                   <thead className="text-left text-xs uppercase tracking-wide text-[color:var(--muted)]">
                     <tr className="bg-[color:var(--surface-muted)]">
                       <th scope="col" style={{ minWidth: '44px' }} className="sticky top-0 border-b border-[color:var(--border)] bg-[color:var(--surface-muted)] px-2 py-3" />
-                      {headers.slice(0, validHeaderCount).map((header, index) => (
+                      <th scope="col" style={{ minWidth: '36px' }} className="sticky top-0 border-b border-[color:var(--border)] bg-[color:var(--surface-muted)] px-1 py-3" />
+                      {visibleColIndices.map((index) => (
                         <th
                           key={index}
                           scope="col"
@@ -571,7 +781,7 @@ export default function App() {
                           aria-sort={sortCol === index ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                         >
                           <span className="inline-flex items-center">
-                            {headerDisplayNames[header.trim()] ?? header}
+                            {headerDisplayNames[headers[index].trim()] ?? headers[index]}
                             <SortIcon col={index} sortCol={sortCol} sortDir={sortDir} />
                           </span>
                         </th>
@@ -612,7 +822,17 @@ export default function App() {
                               </td>
                             );
                           })()}
-                          {row.slice(0, validHeaderCount).map((cell, cellIndex) => {
+                          <td className="px-1 py-2.5 align-middle">
+                            <button
+                              onClick={() => setEditingRow(row)}
+                              title="Eintrag bearbeiten"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--muted)] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--foreground)]"
+                            >
+                              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M8.5 1.5a1.5 1.5 0 0 1 2.121 2.121L4 10.243 1 11l.757-3L8.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </button>
+                          </td>
+                          {visibleColIndices.map((cellIndex) => {
+                            const cell = row[cellIndex] ?? '';
                             let displayContent: ReactNode = cell;
                             let cellClassName = '';
 
@@ -665,9 +885,43 @@ export default function App() {
                                       {displayContent}
                                     </div>
                                   </div>
-                                ) : cellIndex === kontaktdatenIndex ? (
-                                  <div className="whitespace-nowrap font-mono text-xs">
+                                ) : cellIndex === telefonnIndex ? (
+                                  <div className="whitespace-nowrap tabular-nums">
                                     {displayContent}
+                                  </div>
+                                ) : cellIndex === typIndex ? (
+                                  <div className="flex w-full justify-center">
+                                    {(() => {
+                                      const typ = deriveTyp(row[nameIndex] ?? '');
+                                      const cls =
+                                        typ === 'Stadt' ? 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800' :
+                                        typ === 'Kreis' ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800' :
+                                        'bg-[color:var(--surface-muted)] text-[color:var(--muted)] border border-[color:var(--border)]';
+                                      return <div className={`table-button ${cls}`}>{typ}</div>;
+                                    })()}
+                                  </div>
+                                ) : cellIndex === adresseIndex ? (
+                                  <div className="line-clamp-2 break-words leading-snug">
+                                    {cell ? (
+                                      <a
+                                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cell)}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="underline-offset-2 hover:underline"
+                                      >
+                                        {cell}
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                ) : cellIndex === websiteIndex ? (
+                                  <div className="whitespace-nowrap truncate max-w-[180px]">
+                                    {cell ? <a href={cell.startsWith('http') ? cell : `https://${cell}`} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">{displayContent}</a> : null}
+                                  </div>
+                                ) : cellIndex === kontaktdatenIndex ? (
+                                  <div className="flex flex-col gap-0.5 font-mono text-xs">
+                                    {String(cell ?? '').split(/[;,]/).map(e => e.trim()).filter(Boolean).map((email, i) => (
+                                      <a key={i} href={`mailto:${email}`} className="underline-offset-2 hover:underline truncate max-w-[200px]">{email}</a>
+                                    ))}
                                   </div>
                                 ) : (
                                   <div className="line-clamp-2 break-words leading-snug">
@@ -681,7 +935,7 @@ export default function App() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={validHeaderCount + 1} className="px-3 py-12 text-center">
+                        <td colSpan={visibleColIndices.length + 2} className="px-3 py-12 text-center">
                           <p className="text-sm font-medium text-[color:var(--foreground)]">Keine Einträge gefunden.</p>
                           {(searchTerm !== '' || bundeslandFilter !== '' || parteiFilter !== '' || hideLeads || excludedBundeslaender.size > 0 || sizeFilter !== '') && (
                             <button
@@ -783,7 +1037,7 @@ export default function App() {
       {pendingLeadRow && (
         <AddLeadModal
           name={pendingLeadRow[nameIndex]?.trim() ?? ''}
-          onConfirm={(von, notes) => { addLead(pendingLeadRow, von, notes); setPendingLeadRow(null); }}
+          onConfirm={(von, notes, status) => { addLead(pendingLeadRow, von, notes, status); setPendingLeadRow(null); }}
           onCancel={() => setPendingLeadRow(null)}
         />
       )}
@@ -792,6 +1046,20 @@ export default function App() {
           count={finalDisplayRows.length}
           onConfirm={() => { setRowsPerPage(0); setShowAllModal(false); }}
           onCancel={() => setShowAllModal(false)}
+        />
+      )}
+      {showAddABH && (
+        <AddABHModal
+          onSave={saveABH}
+          onCancel={() => setShowAddABH(false)}
+        />
+      )}
+      {editingRow && (
+        <EditABHModal
+          row={editingRow}
+          headers={headers}
+          onSave={editABH}
+          onCancel={() => setEditingRow(null)}
         />
       )}
     </main>

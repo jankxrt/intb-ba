@@ -22,14 +22,22 @@
  */
 
 const { chromium } = require('playwright');
-const fs   = require('fs');
-const path = require('path');
+const fs    = require('fs');
+const path  = require('path');
+const https = require('https');
 
 const CSV_PATH  = path.resolve(__dirname, '../frontend/public/data/abs_bundesland.csv');
 const BAMF_URL  = 'https://bamf-navi.bamf.de/de/Themen/Behoerden/';
-const HEADLESS  = process.env.HEADLESS === 'true';
-const START_ROW = parseInt(process.env.START ?? '0', 10);
-const DELAY_MS  = parseInt(process.env.DELAY ?? '2000', 10);
+const HEADLESS      = process.env.HEADLESS === 'true';
+const START_ROW     = parseInt(process.env.START ?? '0', 10);
+const DELAY_MS      = parseInt(process.env.DELAY ?? '2000', 10);
+const REGEOCODE_ALL = process.env.REGEOCODE === 'true'; // clear & redo all coords
+
+// Comma-separated Stadt names to force re-scrape even if already filled.
+// Example: RESCRAPE="Grafschaft Bentheim,Ahrweiler" node scrape.js
+const RESCRAPE_CITIES = new Set(
+  (process.env.RESCRAPE ?? '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+);
 
 // ── CSV ───────────────────────────────────────────────────────────────────────
 function readCSV(filepath) {
@@ -43,12 +51,37 @@ function readCSV(filepath) {
 }
 
 function splitLine(line) {
-  // Naive split — the CSV doesn't use quoted fields with embedded commas
-  return line.split(',');
+  const fields = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; } // escaped quote
+      else inQ = !inQ;
+    } else if (ch === ',' && !inQ) {
+      fields.push(cur); cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  fields.push(cur);
+  return fields;
+}
+
+function quoteField(val) {
+  const s = String(val ?? '');
+  // Quote any field that contains a comma, double-quote, or newline
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
 }
 
 function writeCSV(filepath, headers, rows) {
-  const content = '﻿' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const content = '﻿' + [
+    headers.map(quoteField).join(','),
+    ...rows.map(r => r.map(quoteField).join(','))
+  ].join('\n');
   const tmp = filepath + '.tmp';
   fs.writeFileSync(tmp, content, 'utf8');
   // Atomic replace — avoids EBUSY from the Next.js dev server holding the file open
@@ -88,7 +121,7 @@ function pickBestRow(csvName, bamfNames) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── Core scrape for one row ───────────────────────────────────────────────────
-async function scrapeEmail(page, csvName, stadtName) {
+async function scrapeDetails(page, csvName, stadtName) {
   // ── 1. Navigate ──────────────────────────────────────────────────────────
   await page.goto(BAMF_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
 
@@ -108,6 +141,7 @@ async function scrapeEmail(page, csvName, stadtName) {
     console.log('    ↳ No autocomplete suggestions for', stadtName);
     return null;
   }
+
 
   // The user spec says: "click on the first <span> it finds" inside the option
   const firstOptionSpan = page.locator(`${optionSel} span.mat-mdc-option-text, ${optionSel} span`).first();
@@ -174,20 +208,97 @@ async function scrapeEmail(page, csvName, stadtName) {
     return null;
   }
 
-  // ── 9. Extract mailto email ──────────────────────────────────────────────
-  // The detail panel may expand inline or navigate to a new URL — handle both.
+  // ── 9. Extract contact details from .objektinfoDetails ───────────────────
   try {
-    await page.waitForSelector('a[href^="mailto:"]', { timeout: 8_000 });
+    await page.waitForSelector('.objektinfoDetails', { timeout: 8_000 });
   } catch {
-    console.log('    ↳ No mailto link found after clicking detail');
+    console.log('    ↳ Detail panel (.objektinfoDetails) did not appear');
     return null;
   }
 
-  const emails = await page.$$eval('a[href^="mailto:"]', links =>
-    links.map(l => l.getAttribute('href')?.replace(/^mailto:/i, '').trim()).filter(Boolean)
-  );
+  const details = await page.$eval('.objektinfoDetails', el => {
+    const tel = el.querySelector('a[href^="tel:"]');
+    const mail = el.querySelector('a[href^="mailto:"]');
+    const web = el.querySelector('a[aria-label="Homepage"]');
 
-  return emails[0] ?? null;
+    // Fax is in a .kontakt div whose text starts with "Fax"
+    let fax = null;
+    el.querySelectorAll('.kontakt').forEach(div => {
+      const t = div.textContent?.trim() ?? '';
+      if (/^fax/i.test(t)) {
+        fax = t.replace(/^fax\s*/i, '').trim();
+      }
+    });
+
+    // Address: street from navi-str-mit-zusatz span + the following postal/city text node
+    let address = null;
+    const streetEl = el.querySelector('navi-str-mit-zusatz span');
+    if (streetEl) {
+      const street = streetEl.textContent?.trim() ?? '';
+      // Walk siblings after navi-str-mit-zusatz to find the postal+city text node
+      let sibling = streetEl.closest('navi-str-mit-zusatz')?.nextSibling;
+      let postalCity = '';
+      while (sibling) {
+        if (sibling.nodeType === Node.TEXT_NODE) {
+          const t = sibling.textContent?.replace(/ /g, ' ').trim();
+          if (t) { postalCity = t; break; }
+        }
+        sibling = sibling.nextSibling;
+      }
+      address = [street, postalCity].filter(Boolean).join(', ');
+    }
+
+    return {
+      email:   mail ? mail.getAttribute('href').replace(/^mailto:/i, '').trim() : null,
+      phone:   tel  ? tel.getAttribute('href').replace(/^tel:/i, '').trim()     : null,
+      fax,
+      website: web  ? web.getAttribute('href')?.trim()                          : null,
+      address,
+    };
+  });
+
+  return details;
+}
+
+// ── Geocoding (Photon / komoot — free, no key required) ──────────────────────
+function photonQuery(q) {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: 'photon.komoot.io',
+      path: `/api/?q=${encodeURIComponent(q)}&lang=de&limit=1&bbox=5.87,47.27,15.04,55.06`,
+      headers: { 'User-Agent': 'bamf-navi-scraper/1.0' },
+    };
+    https.get(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          const feature = data?.features?.[0];
+          if (feature) {
+            const [lng, lat] = feature.geometry.coordinates;
+            return resolve({ lat: String(lat), lng: String(lng) });
+          }
+        } catch (e) {
+          console.log(`  ↳ Geocode parse error: ${e.message}`);
+        }
+        resolve(null);
+      });
+    }).on('error', (e) => {
+      console.log(`  ↳ Geocode request error: ${e.message}`);
+      resolve(null);
+    });
+  });
+}
+
+async function geocode(address, city) {
+  // Prefer full address for accuracy; fall back to city name
+  if (address) {
+    const geo = await photonQuery(address + ', Deutschland');
+    if (geo) return geo;
+    await sleep(1100);
+  }
+  return photonQuery(city + ', Deutschland');
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -195,14 +306,25 @@ async function main() {
   console.log('Reading CSV:', CSV_PATH);
   const { headers, rows } = readCSV(CSV_PATH);
 
-  // Ensure "Kontaktdaten" column exists
-  let kdIdx = headers.findIndex(h => h.trim() === 'Kontaktdaten');
-  if (kdIdx < 0) {
-    headers.push('Kontaktdaten');
-    kdIdx = headers.length - 1;
-    rows.forEach(row => { while (row.length < headers.length) row.push(''); });
-    console.log('Added "Kontaktdaten" column.');
+  // Ensure contact columns exist
+  function ensureCol(name) {
+    let idx = headers.findIndex(h => h.trim() === name);
+    if (idx < 0) {
+      headers.push(name);
+      idx = headers.length - 1;
+      rows.forEach(row => { while (row.length < headers.length) row.push(''); });
+      console.log(`Added "${name}" column.`);
+    }
+    return idx;
   }
+
+  const kdIdx      = ensureCol('Kontaktdaten'); // email
+  const phoneIdx   = ensureCol('Telefon');
+  const faxIdx     = ensureCol('Fax');
+  const websiteIdx = ensureCol('Website');
+  const addrIdx    = ensureCol('Adresse');
+  const latIdx     = ensureCol('Lat');
+  const lngIdx     = ensureCol('Lng');
 
   const nameIdx  = headers.findIndex(h => h.trim() === 'Name');
   const stadtIdx = headers.findIndex(h => h.trim() === 'Stadt');
@@ -225,23 +347,53 @@ async function main() {
 
     if (!csvName || !stadt) continue;
 
-    // Skip rows that already have an email
-    if (row[kdIdx]?.trim()) {
+    // Optionally wipe stale coords so they get re-geocoded with the address
+    if (REGEOCODE_ALL) { row[latIdx] = ''; row[lngIdx] = ''; }
+
+    // Force re-scrape for cities listed in RESCRAPE env var
+    const forceRescrape = RESCRAPE_CITIES.has(stadt.toLowerCase());
+    if (forceRescrape) {
+      row[kdIdx] = ''; row[phoneIdx] = ''; row[faxIdx] = '';
+      row[websiteIdx] = ''; row[addrIdx] = '';
+      row[latIdx] = ''; row[lngIdx] = '';
+      console.log(`  ↺  Force re-scrape for "${stadt}"`);
+    }
+
+    // Skip if already scraped (has email or address) AND already geocoded
+    const alreadyScraped = !!(row[kdIdx]?.trim() || row[addrIdx]?.trim());
+    const alreadyGeocoded = !!(row[latIdx]?.trim() && row[lngIdx]?.trim());
+    if (alreadyScraped && alreadyGeocoded) {
       skipped++;
       continue;
     }
 
     console.log(`\n[${i + 1}/${rows.length}] ${csvName}  —  searching "${stadt}"…`);
 
-    const email = await scrapeEmail(page, csvName, stadt);
+    const details = await scrapeDetails(page, csvName, stadt);
     processed++;
 
-    if (email) {
-      row[kdIdx] = email;
+    if (details) {
+      if (details.email)   row[kdIdx]      = details.email;
+      if (details.phone)   row[phoneIdx]   = details.phone;
+      if (details.fax)     row[faxIdx]     = details.fax;
+      if (details.website) row[websiteIdx] = details.website;
+      if (details.address) row[addrIdx]    = details.address;
       found++;
-      console.log(`  ✓  ${email}`);
+      console.log(`  ✓  email=${details.email ?? '—'}  phone=${details.phone ?? '—'}  fax=${details.fax ?? '—'}  web=${details.website ?? '—'}  addr=${details.address ?? '—'}`);
     } else {
-      console.log('  –  No email found.');
+      console.log('  –  No details found.');
+    }
+
+    // Geocode if coordinates not yet saved
+    if (!row[latIdx]?.trim() || !row[lngIdx]?.trim()) {
+      const addr = row[addrIdx]?.trim() || null;
+      const geo  = await geocode(addr, stadt);
+      if (geo) {
+        row[latIdx] = geo.lat;
+        row[lngIdx] = geo.lng;
+        console.log(`  📍 geocoded: ${geo.lat}, ${geo.lng}${addr ? ' (address)' : ' (city)'}`);
+      }
+      await sleep(1100);
     }
 
     // Save progress after every row so a crash doesn't lose work
