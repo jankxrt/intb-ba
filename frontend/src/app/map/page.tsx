@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import type { ABHEntry } from "./LeafletMap";
 
-const Map = dynamic(() => import("./LeafletMap"), { ssr: false, loading: () => null });
+type LeafletMapProps = { entries: ABHEntry[]; radiusActive: boolean; onRadiusEntries: (e: ABHEntry[] | null) => void; };
+const LeafletMapComponent = dynamic(() => import("./LeafletMap"), { ssr: false, loading: () => null }) as React.FC<LeafletMapProps>;
 
 const VON_OPTIONS = ["Ramin Goo", "Jan Kortmann", "Isabel Magallanes", "Barbara Stasiak"];
 
@@ -244,7 +245,7 @@ export default function MapPage() {
 
         {/* Map */}
         <div className="relative overflow-hidden rounded-xl border border-[color:var(--border)] shadow-sm" style={{ height: 600 }}>
-          <Map
+          <LeafletMapComponent
             entries={entries}
             radiusActive={radiusActive}
             onRadiusEntries={setRadiusEntries}

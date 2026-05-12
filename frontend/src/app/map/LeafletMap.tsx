@@ -60,7 +60,7 @@ const edgeHandleIcon = L.divIcon({
   iconAnchor: [8, 8],
 });
 
-function createClusterIcon(cluster: L.MarkerCluster) {
+function createClusterIcon(cluster: { getChildCount: () => number }) {
   const count = cluster.getChildCount();
   const size = count < 10 ? 32 : count < 100 ? 38 : 44;
   return L.divIcon({

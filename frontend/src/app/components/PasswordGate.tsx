@@ -12,7 +12,7 @@ export default function PasswordGate({ children }: { children: React.ReactNode }
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setUnlocked(sessionStorage.getItem(STORAGE_KEY) === "1");
+    setUnlocked(localStorage.getItem(STORAGE_KEY) === "1");
   }, []);
 
   useEffect(() => {
@@ -23,7 +23,7 @@ export default function PasswordGate({ children }: { children: React.ReactNode }
 
   function submit() {
     if (input === CORRECT) {
-      sessionStorage.setItem(STORAGE_KEY, "1");
+      localStorage.setItem(STORAGE_KEY, "1");
       setUnlocked(true);
     } else {
       setError(true);
