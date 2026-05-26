@@ -39,6 +39,7 @@ export default function RootLayout({
                 <a href="/" className="nav-link">Übersicht</a>
                 <a href="/statistics" className="nav-link">Statistik</a>
                 <a href="/outreach" className="nav-link">Outreach</a>
+                <a href="/outreach/email" className="nav-link">E-Mail</a>
                 <span className="nav-link opacity-40 cursor-not-allowed pointer-events-none select-none" title="Demnächst verfügbar">Karte</span>
               </div>
             </nav>

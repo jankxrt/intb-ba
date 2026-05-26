@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, GeoJSON, Circle } from 
 import MarkerClusterGroup from "react-leaflet-cluster";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import type { ABHEntry } from "@/lib/supabase";
 
 function useDarkMode() {
   const [dark, setDark] = useState(false);
@@ -22,18 +23,6 @@ function useDarkMode() {
     return () => { observer.disconnect(); mq.removeEventListener("change", check); };
   }, []);
   return dark;
-}
-
-export interface ABHEntry {
-  name: string;
-  stadt: string;
-  adresse: string;
-  coordinates: [number, number];
-  // extra fields for lead creation
-  land?: string;
-  partei?: string;
-  einwohner?: string;
-  kontaktdaten?: string;
 }
 
 const GERMANY_BOUNDS = L.latLngBounds([46.5, 5.5], [55.5, 15.5]);
@@ -83,8 +72,9 @@ function haversineKm(a: L.LatLng, b: { lat: number; lng: number }): number {
 function BoundsFitter({ entries }: { entries: ABHEntry[] }) {
   const map = useMap();
   useEffect(() => {
-    if (entries.length === 0) return;
-    map.fitBounds(L.latLngBounds(entries.map(e => e.coordinates)), { padding: [40, 40] });
+    const geo = entries.filter(e => e.lat != null && e.lng != null);
+    if (geo.length === 0) return;
+    map.fitBounds(L.latLngBounds(geo.map(e => [e.lat!, e.lng!] as [number, number])), { padding: [40, 40] });
   }, [entries.length]);
   return null;
 }
@@ -92,8 +82,8 @@ function BoundsFitter({ entries }: { entries: ABHEntry[] }) {
 function FlyTo({ target }: { target: ABHEntry | null }) {
   const map = useMap();
   useEffect(() => {
-    if (!target) return;
-    map.flyTo(target.coordinates, 14, { duration: 1.2 });
+    if (!target || target.lat == null || target.lng == null) return;
+    map.flyTo([target.lat, target.lng], 14, { duration: 1.2 });
   }, [target]);
   return null;
 }
@@ -118,7 +108,8 @@ function SearchBar({ entries, dark }: { entries: ABHEntry[]; dark: boolean }) {
   function choose(entry: ABHEntry) {
     setQuery(entry.stadt);
     setOpen(false);
-    map.flyTo(entry.coordinates, 14, { duration: 1.2 });
+    if (entry.lat != null && entry.lng != null)
+      map.flyTo([entry.lat, entry.lng], 14, { duration: 1.2 });
   }
 
   const bg      = dark ? "#1f1f1f" : "#fff";
@@ -368,14 +359,16 @@ export default function LeafletMap({
   useEffect(() => {
     if (!radiusActive || !radiusCenter) return;
     const filtered = entries.filter(e =>
-      haversineKm(radiusCenter, { lat: e.coordinates[0], lng: e.coordinates[1] }) <= effectiveKm
+      e.lat != null && e.lng != null &&
+      haversineKm(radiusCenter, { lat: e.lat, lng: e.lng }) <= effectiveKm
     );
     onRadiusEntries(filtered);
   }, [radiusActive, radiusCenter, effectiveKm, entries]);
 
+  const geoEntries = entries.filter(e => e.lat != null && e.lng != null);
   const visibleEntries = radiusActive && radiusCenter
-    ? entries.filter(e => haversineKm(radiusCenter, { lat: e.coordinates[0], lng: e.coordinates[1] }) <= effectiveKm)
-    : entries;
+    ? geoEntries.filter(e => haversineKm(radiusCenter, { lat: e.lat!, lng: e.lng! }) <= effectiveKm)
+    : geoEntries;
 
   return (
     <>
@@ -429,7 +422,7 @@ export default function LeafletMap({
           showCoverageOnHover={false}
         >
           {visibleEntries.map((entry) => (
-            <Marker key={entry.stadt} position={entry.coordinates} icon={pinIcon}>
+            <Marker key={entry.id} position={[entry.lat!, entry.lng!] as [number, number]} icon={pinIcon}>
               <Popup>
                 <strong style={{ fontSize: 13 }}>{entry.name}</strong>
                 <div style={{ color: dark ? "#aaa" : "#666", marginTop: 2 }}>{entry.stadt}</div>
@@ -441,7 +434,7 @@ export default function LeafletMap({
           ))}
         </MarkerClusterGroup>
 
-        {!radiusActive && <BoundsFitter entries={entries} />}
+        {!radiusActive && <BoundsFitter entries={geoEntries} />}
         <FlyTo target={flyTarget} />
         <SearchBar entries={entries} dark={dark} />
 

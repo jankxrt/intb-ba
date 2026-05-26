@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import Papa from "papaparse";
 import dynamic from "next/dynamic";
 const StatisticsLeafletMap = dynamic(() => import("./StatisticsLeafletMap"), { ssr: false, loading: () => null });
 import { supabase } from "@/lib/supabase";
@@ -62,43 +61,30 @@ export default function Statistics() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Papa.parse<string[]>("/data/abs_bundesland.csv", {
-      download: true, skipEmptyLines: true, encoding: "ISO-8859-1",
-      complete: ({ data }) => {
-        const headers = data[0];
-        const stadtIdx = headers.findIndex(h => h.trim() === "Stadt");
-        const typeIdx  = headers.findIndex(h => h.trim() === "Type");
-        const landIdx  = headers.findIndex(h => h.trim() === "Land");
-        const kontIdx  = headers.findIndex(h => h.trim() === "Kontakt");
-        const ewnIdx   = headers.findIndex(h => h.trim() === "Einwohner");
-        const rows: CsvRow[] = [];
-        const acc: Record<string, BundeslandStats> = {};
-        const szAcc = {} as Record<SizeCategory, SizeStats>;
-        data.slice(1).forEach(row => {
-          const land = row[landIdx]?.trim();
-          if (!land) return;
-          const kontakt = row[kontIdx]?.trim() ?? "";
-          const size    = getCitySize(row[ewnIdx] ?? "");
-          const r: CsvRow = {
-            stadt: row[stadtIdx]?.trim() ?? "",
-            type:  row[typeIdx]?.trim()  ?? "",
-            land, kontakt, size,
-          };
-          rows.push(r);
-          if (!acc[land]) acc[land] = { total: 0, contacted: 0 };
-          acc[land].total++;
-          if (!szAcc[size]) szAcc[size] = { total: 0, contacted: 0 };
-          szAcc[size].total++;
-          if (kontaktiertSet.has(kontakt.toUpperCase())) {
-            acc[land].contacted++;
-            szAcc[size].contacted++;
-          }
-        });
-        setCsvRows(rows);
-        setBlStats(acc);
-        setSizeStats(szAcc);
-        setLoading(false);
-      },
+    supabase.from("auslaenderbehoerden").select("id, stadt, typ, land, kontakt, einwohner").then(({ data }) => {
+      if (!data) return;
+      const acc: Record<string, BundeslandStats> = {};
+      const szAcc = {} as Record<SizeCategory, SizeStats>;
+      const csvR: CsvRow[] = [];
+      data.forEach(entry => {
+        const land = entry.land?.trim();
+        if (!land) return;
+        const kontakt = entry.kontakt?.trim() ?? "";
+        const size = getCitySize(entry.einwohner ?? "");
+        csvR.push({ stadt: entry.stadt ?? "", type: entry.typ ?? "", land, kontakt, size });
+        if (!acc[land]) acc[land] = { total: 0, contacted: 0 };
+        acc[land].total++;
+        if (!szAcc[size]) szAcc[size] = { total: 0, contacted: 0 };
+        szAcc[size].total++;
+        if (kontaktiertSet.has(kontakt.toUpperCase())) {
+          acc[land].contacted++;
+          szAcc[size].contacted++;
+        }
+      });
+      setCsvRows(csvR);
+      setBlStats(acc);
+      setSizeStats(szAcc);
+      setLoading(false);
     });
   }, []);
 

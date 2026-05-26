@@ -39,9 +39,7 @@ function writeCSV(headers: string[], rows: string[][]) {
     headers.map(quoteField).join(','),
     ...rows.map(r => r.map(quoteField).join(',')),
   ].join('\n');
-  const tmp = CSV_PATH + '.tmp';
-  fs.writeFileSync(tmp, content, 'utf8');
-  fs.renameSync(tmp, CSV_PATH);
+  fs.writeFileSync(CSV_PATH, content, 'utf8');
 }
 
 // POST — insert new row
