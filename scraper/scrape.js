@@ -26,7 +26,16 @@ const fs    = require('fs');
 const path  = require('path');
 const https = require('https');
 
-const CSV_PATH  = path.resolve(__dirname, '../frontend/public/data/abs_bundesland.csv');
+const CSV_SRC   = path.resolve(__dirname, '../frontend/public/data/abs_bundesland.csv');
+// CSV_OUT: if set, write output here instead of back to CSV_SRC.
+// Default local output goes straight into the Next.js public folder so
+// the dev server serves it at /data/abs_bundesland_local.csv automatically.
+//
+// Local run (safe):   node scrape.js
+// Production update:  $env:CSV_OUT="../frontend/public/data/abs_bundesland.csv"; node scrape.js
+const CSV_OUT_DEFAULT = path.resolve(__dirname, '../frontend/public/data/abs_bundesland_local.csv');
+const CSV_OUT   = process.env.CSV_OUT ? path.resolve(process.cwd(), process.env.CSV_OUT) : CSV_OUT_DEFAULT;
+const CSV_PATH  = CSV_SRC; // always read from production CSV as starting point
 const BAMF_URL  = 'https://bamf-navi.bamf.de/de/Themen/Behoerden/';
 const HEADLESS      = process.env.HEADLESS === 'true';
 const START_ROW     = parseInt(process.env.START ?? '0', 10);
@@ -84,8 +93,18 @@ function writeCSV(filepath, headers, rows) {
   ].join('\n');
   const tmp = filepath + '.tmp';
   fs.writeFileSync(tmp, content, 'utf8');
-  // Atomic replace — avoids EBUSY from the Next.js dev server holding the file open
-  fs.renameSync(tmp, filepath);
+  // Atomic replace — on Windows renameSync can fail with EPERM if the file
+  // is held open by the Next.js dev server, so fall back to direct write.
+  try {
+    fs.renameSync(tmp, filepath);
+  } catch (e) {
+    if (e.code === 'EPERM' || e.code === 'EBUSY') {
+      fs.writeFileSync(filepath, content, 'utf8');
+      try { fs.unlinkSync(tmp); } catch {}
+    } else {
+      throw e;
+    }
+  }
 }
 
 // ── Name matching ─────────────────────────────────────────────────────────────
@@ -107,14 +126,16 @@ function scoreMatch(csvName, bamfName) {
   return a.filter(w => b.has(w)).length;
 }
 
+const MIN_MATCH_SCORE = 1; // at least 1 meaningful word must match
+
 function pickBestRow(csvName, bamfNames) {
   let best = -1, bestScore = 0;
   bamfNames.forEach((n, i) => {
     const s = scoreMatch(csvName, n);
     if (s > bestScore) { bestScore = s; best = i; }
   });
-  // Fall back to row 0 if nothing matched — still try to get any email
-  return { idx: best >= 0 ? best : 0, matched: bestScore > 0 };
+  if (bestScore < MIN_MATCH_SCORE) return { idx: -1, matched: false };
+  return { idx: best, matched: true };
 }
 
 // ── Sleep ─────────────────────────────────────────────────────────────────────
@@ -192,10 +213,11 @@ async function scrapeDetails(page, csvName, stadtName) {
   // ── 7. Pick best matching row ────────────────────────────────────────────
   const { idx, matched } = pickBestRow(csvName, bamfNames);
   if (!matched) {
-    console.log(`    ↳ No name match; using row 0 ("${bamfNames[0]?.trim()}")`);
-  } else {
-    console.log(`    ↳ Matched row ${idx}: "${bamfNames[idx]?.trim()}"`);
+    console.log(`    ↳ ⚠️  No name match found for "${csvName}" — skipping to avoid wrong data.`);
+    console.log(`    ↳    Available: ${bamfNames.map(n => `"${n?.trim()}"`).join(', ')}`);
+    return null;
   }
+  console.log(`    ↳ Matched row ${idx}: "${bamfNames[idx]?.trim()}"`)
 
   // ── 8. Click detail button in that row ───────────────────────────────────
   // The button contains a <span class="mat-mdc-button-touch-target">
@@ -260,7 +282,38 @@ async function scrapeDetails(page, csvName, stadtName) {
   return details;
 }
 
-// ── Geocoding (Photon / komoot — free, no key required) ──────────────────────
+// ── Geocoding ─────────────────────────────────────────────────────────────────
+// Strategy (most → least accurate):
+//   1. Nominatim structured query: street + PLZ  (exact building)
+//   2. Nominatim structured query: PLZ only       (postal code centroid — still unambiguous)
+//   3. Photon full-address query                  (fuzzy fallback)
+//   4. Photon city-name query                     (last resort)
+//
+// Nominatim rate-limit: 1 req/s — always sleep 1100 ms between calls.
+
+function nominatimRequest(params) {
+  return new Promise((resolve) => {
+    const qs = new URLSearchParams({ ...params, countrycodes: 'de', format: 'json', limit: '1', 'accept-language': 'de' }).toString();
+    const options = {
+      hostname: 'nominatim.openstreetmap.org',
+      path: `/search?${qs}`,
+      headers: { 'User-Agent': 'bamf-navi-scraper/1.0 (internal ABH index tool)' },
+    };
+    https.get(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          const hit = data?.[0];
+          if (hit?.lat && hit?.lon) return resolve({ lat: String(hit.lat), lng: String(hit.lon) });
+        } catch (e) { console.log(`  ↳ Nominatim parse error: ${e.message}`); }
+        resolve(null);
+      });
+    }).on('error', (e) => { console.log(`  ↳ Nominatim request error: ${e.message}`); resolve(null); });
+  });
+}
+
 function photonQuery(q) {
   return new Promise((resolve) => {
     const options = {
@@ -279,32 +332,82 @@ function photonQuery(q) {
             const [lng, lat] = feature.geometry.coordinates;
             return resolve({ lat: String(lat), lng: String(lng) });
           }
-        } catch (e) {
-          console.log(`  ↳ Geocode parse error: ${e.message}`);
-        }
+        } catch (e) { console.log(`  ↳ Photon parse error: ${e.message}`); }
         resolve(null);
       });
-    }).on('error', (e) => {
-      console.log(`  ↳ Geocode request error: ${e.message}`);
-      resolve(null);
-    });
+    }).on('error', (e) => { console.log(`  ↳ Photon request error: ${e.message}`); resolve(null); });
   });
 }
 
+// Extract 5-digit German postal code from an address string
+function extractPLZ(address) {
+  const m = (address ?? '').match(/\b(\d{5})\b/);
+  return m ? m[1] : null;
+}
+
+// Extract street + house number from address (everything before the PLZ)
+function extractStreet(address) {
+  const m = (address ?? '').match(/^([^,]+?)(?:\s*,\s*\d{5}|,\s*,)/);
+  return m ? m[1].trim() : null;
+}
+
 async function geocode(address, city) {
-  // Prefer full address for accuracy; fall back to city name
+  const plz    = extractPLZ(address);
+  const street = extractStreet(address);
+
+  // ── 1. Nominatim: street + PLZ (most accurate — exact building) ────────────
+  if (plz && street) {
+    const geo = await nominatimRequest({ street, postalcode: plz });
+    await sleep(1100);
+    if (geo) { console.log(`  ↳ 📍 geocoded via Nominatim street+PLZ (${plz}): ${geo.lat}, ${geo.lng}`); return geo; }
+  }
+
+  // ── 2. Nominatim: PLZ only (postal code centroid — unambiguous in Germany) ──
+  if (plz) {
+    const geo = await nominatimRequest({ postalcode: plz });
+    await sleep(1100);
+    if (geo) { console.log(`  ↳ 📍 geocoded via Nominatim PLZ ${plz}: ${geo.lat}, ${geo.lng}`); return geo; }
+  }
+
+  // ── 3. Photon: full address (fuzzy) ────────────────────────────────────────
   if (address) {
     const geo = await photonQuery(address + ', Deutschland');
-    if (geo) return geo;
     await sleep(1100);
+    if (geo) { console.log(`  ↳ 📍 geocoded via Photon address: ${geo.lat}, ${geo.lng}`); return geo; }
   }
-  return photonQuery(city + ', Deutschland');
+
+  // ── 4. Photon: city name only (last resort) ────────────────────────────────
+  console.log(`  ↳ ⚠️  falling back to city-name geocode for "${city}"`);
+  const geo = await photonQuery(city + ', Deutschland');
+  if (geo) { console.log(`  ↳ 📍 geocoded via Photon city: ${geo.lat}, ${geo.lng}`); return geo; }
+  return null;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log('Reading CSV:', CSV_PATH);
-  const { headers, rows } = readCSV(CSV_PATH);
+  console.log('Reading CSV :', CSV_PATH);
+  console.log('Writing to  :', CSV_OUT);
+  if (CSV_OUT !== CSV_PATH) console.log('⚠️  LOCAL MODE — production CSV will NOT be modified.\n');
+  else console.log('⚠️  PRODUCTION MODE — writing directly to production CSV.\n');
+
+  // Always read from the production CSV as the authoritative base.
+  // In local mode, wipe all scraped columns so everything is fetched fresh.
+  // To resume an interrupted run use START=<row> — the skip logic handles already-done rows.
+  const { headers, rows } = readCSV(CSV_SRC);
+
+  if (CSV_OUT !== CSV_SRC) {
+    const scrapedCols = ['Kontaktdaten', 'Telefon', 'Fax', 'Website', 'Adresse', 'Lat', 'Lng'];
+    scrapedCols.forEach(col => {
+      const idx = headers.findIndex(h => h.trim() === col);
+      if (idx >= 0) rows.forEach(row => { row[idx] = ''; });
+    });
+    writeCSV(CSV_OUT, headers, rows);
+    console.log(`✓ Clean local CSV ready — all scraped columns cleared.`);
+    console.log(`  Tip: to resume after a crash use $env:START=<row number>\n`);
+  } else {
+    // Production mode: write initial state so the file exists before the loop
+    writeCSV(CSV_OUT, headers, rows);
+  }
 
   // Ensure contact columns exist
   function ensureCol(name) {
@@ -350,23 +453,36 @@ async function main() {
     // Optionally wipe stale coords so they get re-geocoded with the address
     if (REGEOCODE_ALL) { row[latIdx] = ''; row[lngIdx] = ''; }
 
+    const alreadyScraped  = !!(row[kdIdx]?.trim() || row[addrIdx]?.trim());
+    const alreadyGeocoded = !!(row[latIdx]?.trim() && row[lngIdx]?.trim());
+
     // Force re-scrape for cities listed in RESCRAPE env var
-    const forceRescrape = RESCRAPE_CITIES.has(stadt.toLowerCase());
+    const forceRescrape = RESCRAPE_CITIES.size > 0 && RESCRAPE_CITIES.has(stadt.toLowerCase());
     if (forceRescrape) {
       row[kdIdx] = ''; row[phoneIdx] = ''; row[faxIdx] = '';
       row[websiteIdx] = ''; row[addrIdx] = '';
       row[latIdx] = ''; row[lngIdx] = '';
-      console.log(`  ↺  Force re-scrape for "${stadt}"`);
+      console.log(`\n[${i + 1}/${rows.length}] ↺  Force re-scrape: "${csvName}" (${stadt})`);
     }
 
-    // Skip if already scraped (has email or address) AND already geocoded
-    const alreadyScraped = !!(row[kdIdx]?.trim() || row[addrIdx]?.trim());
-    const alreadyGeocoded = !!(row[latIdx]?.trim() && row[lngIdx]?.trim());
-    if (alreadyScraped && alreadyGeocoded) {
+    // ── Already fully done → skip entirely ───────────────────────────────────
+    if (!forceRescrape && alreadyScraped && alreadyGeocoded) {
       skipped++;
       continue;
     }
 
+    // ── Already scraped but missing coords → geocode-only pass (no BAMF) ─────
+    if (!forceRescrape && alreadyScraped && !alreadyGeocoded) {
+      console.log(`\n[${i + 1}/${rows.length}] 📍 Geocode-only: "${csvName}" (${stadt})`);
+      const addr = row[addrIdx]?.trim() || null;
+      const geo  = await geocode(addr, stadt);
+      if (geo) { row[latIdx] = geo.lat; row[lngIdx] = geo.lng; }
+      writeCSV(CSV_OUT, headers, rows);
+      await sleep(DELAY_MS);
+      continue;
+    }
+
+    // ── Full BAMF scrape (new entry or forced rescrape) ───────────────────────
     console.log(`\n[${i + 1}/${rows.length}] ${csvName}  —  searching "${stadt}"…`);
 
     const details = await scrapeDetails(page, csvName, stadt);
@@ -384,20 +500,16 @@ async function main() {
       console.log('  –  No details found.');
     }
 
-    // Geocode if coordinates not yet saved
+    // Geocode using the freshly scraped address
     if (!row[latIdx]?.trim() || !row[lngIdx]?.trim()) {
       const addr = row[addrIdx]?.trim() || null;
       const geo  = await geocode(addr, stadt);
-      if (geo) {
-        row[latIdx] = geo.lat;
-        row[lngIdx] = geo.lng;
-        console.log(`  📍 geocoded: ${geo.lat}, ${geo.lng}${addr ? ' (address)' : ' (city)'}`);
-      }
+      if (geo) { row[latIdx] = geo.lat; row[lngIdx] = geo.lng; }
       await sleep(1100);
     }
 
     // Save progress after every row so a crash doesn't lose work
-    writeCSV(CSV_PATH, headers, rows);
+    writeCSV(CSV_OUT, headers, rows);
 
     await sleep(DELAY_MS);
   }

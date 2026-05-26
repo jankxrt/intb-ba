@@ -176,6 +176,8 @@ function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
   );
 }
 
+type ViewMode = 'list' | 'kanban';
+
 export default function OutreachPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,6 +189,8 @@ export default function OutreachPage() {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [kanbanGroup, setKanbanGroup] = useState<'status' | 'person'>('status');
 
   useEffect(() => { fetchLeads(); }, []);
 
@@ -276,6 +280,48 @@ export default function OutreachPage() {
               )}
             </p>
           </div>
+          <div className="flex items-center gap-2">
+          {/* Kanban group toggle */}
+          {viewMode === 'kanban' && (
+            <div className="flex items-center gap-1 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-1">
+              <button
+                onClick={() => setKanbanGroup('status')}
+                className={`h-7 rounded-md px-2.5 text-xs font-medium transition-colors ${kanbanGroup === 'status' ? 'bg-[color:var(--surface)] shadow-sm text-[color:var(--foreground)]' : 'text-[color:var(--muted)] hover:text-[color:var(--foreground)]'}`}
+              >
+                Status
+              </button>
+              <button
+                onClick={() => setKanbanGroup('person')}
+                className={`h-7 rounded-md px-2.5 text-xs font-medium transition-colors ${kanbanGroup === 'person' ? 'bg-[color:var(--surface)] shadow-sm text-[color:var(--foreground)]' : 'text-[color:var(--muted)] hover:text-[color:var(--foreground)]'}`}
+              >
+                Person
+              </button>
+            </div>
+          )}
+          {/* View toggle */}
+          <div className="flex items-center gap-1 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-1">
+            <button
+              onClick={() => setViewMode('list')}
+              title="Listenansicht"
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${viewMode === 'list' ? 'bg-[color:var(--surface)] shadow-sm text-[color:var(--foreground)]' : 'text-[color:var(--muted)] hover:text-[color:var(--foreground)]'}`}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M2 3h10M2 7h10M2 11h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
+            <button
+              onClick={() => setViewMode('kanban')}
+              title="Kanban-Ansicht"
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${viewMode === 'kanban' ? 'bg-[color:var(--surface)] shadow-sm text-[color:var(--foreground)]' : 'text-[color:var(--muted)] hover:text-[color:var(--foreground)]'}`}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="1" y="1" width="3.5" height="12" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+                <rect x="5.25" y="1" width="3.5" height="8" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+                <rect x="9.5" y="1" width="3.5" height="10" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+              </svg>
+            </button>
+          </div>
+          </div>
         </header>
 
         {error && (
@@ -331,6 +377,98 @@ export default function OutreachPage() {
               Suche zurücksetzen
             </button>
           </div>
+        ) : viewMode === 'kanban' ? (
+          /* ── Kanban view ── */
+          (() => {
+            const groups = kanbanGroup === 'status'
+              ? STATUS_OPTIONS.map(key => ({ key, label: key, cards: filteredLeads.filter(l => l.status === key) }))
+              : [...VON_OPTIONS.map(key => ({ key, label: key, cards: filteredLeads.filter(l => l.von === key) })),
+                 { key: '__unassigned__', label: 'Nicht zugewiesen', cards: filteredLeads.filter(l => !l.von) }];
+
+            const KanbanCard = ({ lead }: { lead: Lead }) => (
+              <div
+                className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-3 shadow-sm hover:shadow-md transition-shadow"
+                style={rowStyle(lead.status)}
+              >
+                <div className="mb-2 flex items-start justify-between gap-1">
+                  <span className="text-sm font-semibold leading-snug text-[color:var(--foreground)] line-clamp-2">{lead.name}</span>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button onClick={() => setEditLeadId(lead.id)} className="flex h-6 w-6 items-center justify-center rounded text-[color:var(--muted)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--foreground)] transition-colors">
+                      <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M9.5 2.5l2 2L4 12H2v-2L9.5 2.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </button>
+                    {confirmDeleteId === lead.id ? (
+                      <>
+                        <button onClick={() => deleteLead(lead.id)} disabled={deletingId === lead.id} className="h-6 rounded bg-red-500 px-1.5 text-xs font-medium text-white hover:bg-red-600 transition-colors">✓</button>
+                        <button onClick={() => setConfirmDeleteId(null)} className="flex h-6 w-6 items-center justify-center rounded text-[color:var(--muted)] hover:bg-[color:var(--surface-hover)] transition-colors">✕</button>
+                      </>
+                    ) : (
+                      <button onClick={() => setConfirmDeleteId(lead.id)} className="flex h-6 w-6 items-center justify-center rounded text-[color:var(--muted)] hover:bg-[color:var(--danger-bg)] hover:text-[color:var(--danger-fg)] transition-colors">
+                        <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1 text-xs text-[color:var(--muted)]">
+                  {lead.stadt && <span>{lead.stadt}{lead.land ? ` · ${lead.land}` : ''}</span>}
+                  {lead.kontaktdaten && (
+                    <a href={`mailto:${lead.kontaktdaten.split(/[;,]/)[0].trim()}`} className="truncate font-mono hover:underline">
+                      {lead.kontaktdaten.split(/[;,]/)[0].trim()}
+                    </a>
+                  )}
+                  {lead.notes && <p className="line-clamp-2">{lead.notes}</p>}
+                </div>
+                <div className="mt-2.5 flex items-center justify-between gap-2">
+                  {/* Status badge — always shown */}
+                  <select
+                    value={lead.status}
+                    onChange={e => updateStatus(lead.id, e.target.value)}
+                    className={`table-button border cursor-pointer appearance-none pr-5 text-xs ${statusClass[lead.status] ?? ''}`}
+                    style={chevronStyle}
+                  >
+                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  {/* Person initials — shown when grouping by status */}
+                  {kanbanGroup === 'status' && lead.von && (
+                    <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300" title={lead.von}>
+                      {lead.von.split(' ').map((w: string) => w[0]).join('')}
+                    </span>
+                  )}
+                  {/* Von select — shown when grouping by person */}
+                  {kanbanGroup === 'person' && (
+                    <VonSelect von={lead.von} id={lead.id} onChange={updateVon} />
+                  )}
+                </div>
+              </div>
+            );
+
+            return (
+              <div className="overflow-x-auto pb-4">
+                <div className="flex gap-3" style={{ minWidth: `${groups.length * 260}px` }}>
+                  {groups.map(({ key, label, cards }) => {
+                    const colCls = kanbanGroup === 'status'
+                      ? (statusClass[key] ?? 'bg-gray-50 text-gray-600 border-gray-200')
+                      : 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800';
+                    return (
+                      <div key={key} className="flex w-60 shrink-0 flex-col gap-2">
+                        <div className={`flex items-center justify-between rounded-lg border px-3 py-2 ${colCls}`}>
+                          <span className="text-xs font-semibold capitalize">{label}</span>
+                          <span className="text-xs font-semibold opacity-70">{cards.length}</span>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          {cards.map(lead => <KanbanCard key={lead.id} lead={lead} />)}
+                          {cards.length === 0 && (
+                            <div className="rounded-xl border border-dashed border-[color:var(--border)] px-3 py-6 text-center text-xs text-[color:var(--muted)]">
+                              Keine Leads
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()
         ) : (
           <section className="overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] shadow-sm">
             <div

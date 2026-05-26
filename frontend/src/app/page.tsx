@@ -270,7 +270,7 @@ function AddABHModal({ onSave, onCancel }: { onSave: (fields: Record<string, str
 
 function EditABHModal({ row, headers, onSave, onCancel }: { row: string[]; headers: string[]; onSave: (originalStadt: string, fields: Record<string, string>) => Promise<void>; onCancel: () => void }) {
   const get = (key: string) => row[headers.findIndex(h => h.trim() === key)] ?? '';
-  const [fields, setFields] = useState<Record<string, string>>({ Name: get('Name'), Stadt: get('Stadt'), Land: get('Land'), Einwohner: get('Einwohner'), Partei: get('Partei'), Adresse: get('Adresse'), Website: get('Website'), Telefon: get('Telefon') });
+  const [fields, setFields] = useState<Record<string, string>>({ Name: get('Name'), Stadt: get('Stadt'), Land: get('Land'), Einwohner: get('Einwohner'), Partei: get('Partei'), Adresse: get('Adresse'), Website: get('Website'), Telefon: get('Telefon'), Lat: get('Lat'), Lng: get('Lng') });
   const [emails, setEmails] = useState<string[]>(() => { const raw = get('Kontaktdaten'); const parts = raw.split(/[;,]/).map(e => e.trim()).filter(Boolean); return parts.length ? parts : ['']; });
   const [saving, setSaving] = useState(false);
   const originalStadt = get('Stadt');
@@ -323,6 +323,26 @@ function EditABHModal({ row, headers, onSave, onCancel }: { row: string[]; heade
               <button onClick={addEmail} className="self-start text-xs text-[color:var(--muted)] hover:text-[color:var(--foreground)] transition-colors">+ E-Mail hinzufügen</button>
             </div>
           </div>
+          {/* Manual coordinate override */}
+          <div className="col-span-2">
+            <div className="flex items-center gap-2 mb-1.5">
+              <label className={labelCls + ' mb-0'}>Koordinaten (Lat / Lng)</label>
+              {fields.Lat && fields.Lng && (
+                <a
+                  href={`https://www.google.com/maps?q=${fields.Lat},${fields.Lng}`}
+                  target="_blank" rel="noreferrer"
+                  className="text-xs text-[color:var(--muted)] hover:text-[color:var(--foreground)] underline-offset-2 hover:underline transition-colors"
+                >
+                  Auf Karte prüfen ↗
+                </a>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <input className={inputCls} value={fields.Lat} onChange={e => set('Lat', e.target.value)} placeholder="z.B. 48.5236" />
+              <input className={inputCls} value={fields.Lng} onChange={e => set('Lng', e.target.value)} placeholder="z.B. 9.7981" />
+            </div>
+            <p className="mt-1 text-xs text-[color:var(--muted)]">Koordinaten manuell korrigieren, falls die Karte falsch platziert ist.</p>
+          </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onCancel} className="h-9 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-4 text-sm font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]">Abbrechen</button>
@@ -355,8 +375,10 @@ export default function App() {
   const [showAddABH, setShowAddABH] = useState(false);
   const [editingRow, setEditingRow] = useState<string[] | null>(null);
 
+  const CSV_FILE = process.env.NEXT_PUBLIC_CSV_FILE ?? '/data/abs_bundesland.csv';
+
   useEffect(() => {
-    Papa.parse<string[]>('/data/abs_bundesland.csv', {
+    Papa.parse<string[]>(CSV_FILE, {
       download: true,
       skipEmptyLines: true,
       encoding: 'ISO-8859-1',
@@ -398,7 +420,7 @@ export default function App() {
 
   async function saveABH(fields: Record<string, string>) {
     await fetch('/api/abh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
-    Papa.parse<string[]>('/data/abs_bundesland.csv', {
+    Papa.parse<string[]>(CSV_FILE, {
       download: true, skipEmptyLines: true, encoding: 'ISO-8859-1',
       complete: (r) => setData(r.data), error: () => {},
     });
@@ -407,7 +429,7 @@ export default function App() {
 
   async function editABH(originalStadt: string, fields: Record<string, string>) {
     await fetch('/api/abh', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stadt: originalStadt, fields }) });
-    Papa.parse<string[]>('/data/abs_bundesland.csv', {
+    Papa.parse<string[]>(CSV_FILE, {
       download: true, skipEmptyLines: true, encoding: 'ISO-8859-1',
       complete: (r) => setData(r.data), error: () => {},
     });
