@@ -12,28 +12,51 @@ const VON_PEOPLE = [
 ];
 
 type AnredeType = 'herr' | 'frau';
+type OrtTyp     = 'stadt' | 'landkreis';
 
 type TemplateFields = {
   behörde:  string;
   stadt:    string;
+  typ:      OrtTyp;
   anrede:   AnredeType;
-  name:     string;   // Bürgermeister nachname
-  deadline: string;   // e.g. "22.05.2026"
+  name:     string;     // Bürgermeister nachname
+  deadline: string;     // e.g. "22.05.2026"
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function extractNachname(bm: string | null): string {
   if (!bm) return '';
   const words = bm.trim().split(/\s+/);
-  // skip honorifics at the start
-  const skip = new Set(['dr.', 'dr', 'prof.', 'prof', 'dipl.', 'mag.', 'herr', 'frau', 'oberbürgermeister', 'oberbürgermeisterin', 'bürgermeister', 'bürgermeisterin']);
+  const skip = new Set(['dr.', 'dr', 'prof.', 'prof', 'dipl.', 'mag.', 'herr', 'frau',
+    'oberbürgermeister', 'oberbürgermeisterin', 'bürgermeister', 'bürgermeisterin',
+    'landrat', 'landrätin']);
   const meaningful = words.filter(w => !skip.has(w.toLowerCase()));
   return meaningful[meaningful.length - 1] ?? bm;
+}
+
+/** Strip common ABH/Ausländerbehörde prefixes from the lead name. */
+function stripBehörde(name: string): string {
+  return name
+    .replace(/^Ausländerbehörde[n]?\s+(der\s+Stadt\s+|des\s+Landkreises?\s+|des\s+Kreises?\s+|der\s+|des\s+)?/i, '')
+    .replace(/^ABH\s+/i, '')
+    .trim();
+}
+
+/** Auto-detect whether a name refers to a Landkreis or Stadt. */
+function detectTyp(name: string): OrtTyp {
+  const l = name.toLowerCase();
+  if (/landkreis|lk\s|\blk\b/.test(l)) return 'landkreis';
+  return 'stadt';
 }
 
 function buildAnrede(type: AnredeType, name: string): string {
   const title = type === 'herr' ? 'Herr' : 'Frau';
   return `Sehr geehrter ${title} ${name},`.replace('Sehr geehrter Frau', 'Sehr geehrte Frau');
+}
+
+function ortPhrase(f: TemplateFields): string {
+  const n = f.stadt || (f.typ === 'landkreis' ? '[Landkreis]' : '[Stadt]');
+  return f.typ === 'landkreis' ? `den Landkreis ${n}` : `die Stadt ${n}`;
 }
 
 function buildPlainText(f: TemplateFields): string {
@@ -52,7 +75,7 @@ function buildPlainText(f: TemplateFields): string {
     '',
     'Gemeinsam mit voraussichtlich sechs im Projekt beteiligten Kommunen entwickeln wir praxiserprobte, rechtssichere Werkzeuge, die Prozesse spürbar vereinfachen und Mitarbeitende nachhaltig entlasten.',
     '',
-    `Wir laden die ${f.stadt || '[Stadt]'} gezielt als Partnerbehörde ein. Als teilnehmende Kommune gestalten Sie die entwickelten Lösungen aktiv mit, erhalten Zugang zu Analysen aus Falldokumentationen und Befragungen und positionieren Ihre Stadt bundesweit als Vorreiter moderner Integrationsverwaltung – bei einem Aufwand von rund vier Online-Terminen jährlich.`,
+    `Wir laden ${ortPhrase(f)} gezielt als Partnerbehörde ein. Als teilnehmende Kommune gestalten Sie die entwickelten Lösungen aktiv mit, erhalten Zugang zu Analysen aus Falldokumentationen und Befragungen und positionieren Ihre ${f.typ === 'landkreis' ? 'Kreisverwaltung' : 'Stadt'} bundesweit als Vorreiter moderner Integrationsverwaltung – bei einem Aufwand von rund vier Online-Terminen jährlich.`,
     '',
     `Wir freuen uns über eine Rückmeldung bis zum ${f.deadline || '[Datum]'}, frühzeitige Rückmeldungen können bei der Vergabe der Projektplätze bevorzugt berücksichtigt werden. Gerne stellen wir Ihnen das Projekt auch in einem kurzen Telefonat persönlich vor und beantworten Ihre Fragen – sprechen Sie uns einfach an.`,
     '',
@@ -71,20 +94,21 @@ function buildHtml(f: TemplateFields): string {
   const anredeStr = f.name
     ? buildAnrede(f.anrede, f.name)
     : 'Sehr geehrte/r Herr/Frau Bürgermeister/in,';
-  const behörde = f.behörde || '[Behörde]';
-  const stadt   = f.stadt   || '[Stadt]';
+  const behörde  = f.behörde  || '[Behörde]';
   const deadline = f.deadline || '[Datum]';
+  const ort      = ortPhrase(f);
+  const verweis  = f.typ === 'landkreis' ? 'Kreisverwaltung' : 'Stadt';
 
   const p = (content: string) =>
     `<p style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.38;margin:12pt 0;">${content}</p>`;
 
-  return `<div style="font-family:Arial,sans-serif;font-size:11pt;color:#000;">
+  return `<div style="font-family:Arial,sans-serif;font-size:11pt;color:#000000;">
 ${p(`<strong><em>Betreff: Verwaltungsmodernisierung der Ausländerbehörde ${behörde}: Einladung zur Partnerschaft</em></strong>`)}
 ${p(anredeStr)}
 ${p('Ausländerbehörden spielen eine zentrale Rolle für die Integration internationaler Fachkräfte – doch sie arbeiten dabei täglich am Limit ihrer Kapazitäten und stehen unter erheblichem Druck. Lange Verfahren und komplexe Kommunikation belasten Verwaltung, Mitarbeitende und Antragstellende gleichermaßen und binden dringend benötigte Ressourcen.')}
 ${p('Hier setzt das <strong>von der Bundesregierung geförderte Projekt zur Modernisierung von Verwaltungsabläufen</strong> der Life Initiative e.V. an: Ziel ist es, die Kommunikation mit Antragstellenden zu verbessern, Bürokratie abzubauen und Integration zu stärken.')}
 ${p('Gemeinsam mit voraussichtlich sechs im Projekt beteiligten Kommunen entwickeln wir praxiserprobte, rechtssichere Werkzeuge, die Prozesse spürbar vereinfachen und Mitarbeitende nachhaltig entlasten.')}
-${p(`Wir laden die ${stadt} gezielt als Partnerbehörde ein. Als teilnehmende Kommune gestalten Sie die entwickelten Lösungen aktiv mit, erhalten Zugang zu Analysen aus Falldokumentationen und Befragungen und positionieren Ihre Stadt bundesweit als Vorreiter moderner Integrationsverwaltung – bei einem Aufwand von rund vier Online-Terminen jährlich.`)}
+${p(`Wir laden ${ort} gezielt als Partnerbehörde ein. Als teilnehmende Kommune gestalten Sie die entwickelten Lösungen aktiv mit, erhalten Zugang zu Analysen aus Falldokumentationen und Befragungen und positionieren Ihre ${verweis} bundesweit als Vorreiter moderner Integrationsverwaltung – bei einem Aufwand von rund vier Online-Terminen jährlich.`)}
 ${p(`Wir freuen uns über eine <strong>Rückmeldung bis zum ${deadline}</strong>, frühzeitige Rückmeldungen können bei der Vergabe der Projektplätze bevorzugt berücksichtigt werden. Gerne stellen wir Ihnen das Projekt auch in einem kurzen Telefonat persönlich vor und beantworten Ihre Fragen – sprechen Sie uns einfach an.`)}
 ${p('Wir freuen uns darauf, gemeinsam neue Impulse für moderne Verwaltungsprozesse zu setzen und in den Austausch zu gehen.')}
 <p style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.38;margin:8pt 0;">Mit freundlichen Grüßen</p>
@@ -94,7 +118,7 @@ ${p('Wir freuen uns darauf, gemeinsam neue Impulse für moderne Verwaltungsproze
 </div>`;
 }
 
-// ── Template preview component ────────────────────────────────────────────────
+// ── Template preview ───────────────────────────────────────────────────────────
 function Hi({ val, placeholder }: { val: string; placeholder: string }) {
   const empty = !val.trim();
   return (
@@ -108,25 +132,22 @@ function Hi({ val, placeholder }: { val: string; placeholder: string }) {
 }
 
 function TemplatePreview({ f }: { f: TemplateFields }) {
-  const anredeStr = f.name
-    ? buildAnrede(f.anrede, f.name)
-    : undefined;
+  const anredeStr = f.name ? buildAnrede(f.anrede, f.name) : undefined;
+  const stadtLabel = f.typ === 'landkreis' ? 'Landkreis' : 'Stadt';
+  const verweis    = f.typ === 'landkreis' ? 'Kreisverwaltung' : 'Stadt';
 
   return (
-    <div className="space-y-4 font-sans text-sm leading-relaxed text-[color:var(--foreground)]" style={{ fontFamily: 'Arial, sans-serif' }}>
+    <div className="space-y-4 text-sm leading-relaxed text-[color:var(--foreground)]" style={{ fontFamily: 'Arial, sans-serif' }}>
       {/* Subject */}
       <p className="font-bold">
-        <span className="not-italic">Betreff: Verwaltungsmodernisierung der Ausländerbehörde </span>
+        Betreff: Verwaltungsmodernisierung der Ausländerbehörde{' '}
         <Hi val={f.behörde} placeholder="Behörde" />
-        <span>: Einladung zur Partnerschaft</span>
+        : Einladung zur Partnerschaft
       </p>
 
       {/* Greeting */}
       <p>
-        {anredeStr
-          ? <Hi val={anredeStr} placeholder="Sehr geehrte/r Herr/Frau Bürgermeister*in," />
-          : <Hi val="" placeholder="Sehr geehrte/r Herr/Frau Bürgermeister*in," />
-        }
+        <Hi val={anredeStr ?? ''} placeholder="Sehr geehrte/r Herr/Frau Bürgermeister*in," />
       </p>
 
       {/* Para 1 */}
@@ -144,9 +165,11 @@ function TemplatePreview({ f }: { f: TemplateFields }) {
         Gemeinsam mit voraussichtlich sechs im Projekt beteiligten Kommunen entwickeln wir praxiserprobte, rechtssichere Werkzeuge, die Prozesse spürbar vereinfachen und Mitarbeitende nachhaltig entlasten.
       </p>
 
-      {/* Para 4 — Stadt placeholder */}
+      {/* Para 4 — Stadt / Landkreis */}
       <p>
-        Wir laden die <Hi val={f.stadt} placeholder="Stadt" /> gezielt als Partnerbehörde ein. Als teilnehmende Kommune gestalten Sie die entwickelten Lösungen aktiv mit, erhalten Zugang zu Analysen aus Falldokumentationen und Befragungen und positionieren Ihre Stadt bundesweit als Vorreiter moderner Integrationsverwaltung – bei einem Aufwand von rund vier Online-Terminen jährlich.
+        Wir laden {f.typ === 'landkreis' ? 'den Landkreis' : 'die Stadt'}{' '}
+        <Hi val={f.stadt} placeholder={stadtLabel} />{' '}
+        gezielt als Partnerbehörde ein. Als teilnehmende Kommune gestalten Sie die entwickelten Lösungen aktiv mit, erhalten Zugang zu Analysen aus Falldokumentationen und Befragungen und positionieren Ihre {verweis} bundesweit als Vorreiter moderner Integrationsverwaltung – bei einem Aufwand von rund vier Online-Terminen jährlich.
       </p>
 
       {/* Para 5 */}
@@ -209,16 +232,15 @@ export default function EmailTemplatePage() {
   const copyTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyHtmlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Template fields (editable)
   const [fields, setFields] = useState<TemplateFields>({
     behörde:  '',
     stadt:    '',
+    typ:      'stadt',
     anrede:   'herr',
     name:     '',
     deadline: '22.05.2026',
   });
 
-  // Load leads with status "neu"
   useEffect(() => {
     supabase
       .from('leads')
@@ -231,16 +253,16 @@ export default function EmailTemplatePage() {
       });
   }, []);
 
-  // When a lead is selected, pre-fill the template fields
   const selectLead = useCallback((lead: Lead) => {
     setSelectedLead(lead);
-    const nachname = extractNachname(lead.buergermeister);
+    const rawName = lead.name ?? '';
     setFields(prev => ({
       ...prev,
-      behörde: lead.name ?? '',
+      behörde: stripBehörde(rawName),
       stadt:   lead.stadt ?? '',
+      typ:     detectTyp(rawName),
       anrede:  'herr',
-      name:    nachname,
+      name:    extractNachname(lead.buergermeister),
     }));
   }, []);
 
@@ -259,46 +281,40 @@ export default function EmailTemplatePage() {
     } catch { /* ignore */ }
   }
 
-  async function copyHtmlToClipboard() {
+  function copyHtmlToClipboard() {
     const html = buildHtml(fields);
 
-    // Modern path: ClipboardItem with text/html + text/plain fallback
-    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
-      try {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            'text/html':  new Blob([html],                  { type: 'text/html'  }),
-            'text/plain': new Blob([buildPlainText(fields)], { type: 'text/plain' }),
-          }),
-        ]);
-        setCopiedHtml(true);
-        if (copyHtmlTimer.current) clearTimeout(copyHtmlTimer.current);
-        copyHtmlTimer.current = setTimeout(() => setCopiedHtml(false), 2500);
-        return;
-      } catch { /* fall through to execCommand */ }
-    }
-
-    // Legacy path: contenteditable element + execCommand
-    // Must be contenteditable for the browser to put rich HTML on the clipboard.
+    // Place an off-screen contenteditable div, select its contents, and
+    // execCommand('copy'). The contenteditable flag is what tells the browser
+    // to put rich HTML (not just plain text) onto the clipboard.
     const el = document.createElement('div');
-    el.contentEditable = 'true';
+    el.setAttribute('contenteditable', 'true');
+    // Off-screen but NOT clipped (no overflow:hidden, no width:1px).
+    el.style.cssText = 'position:absolute;left:-9999px;top:0;width:600px;';
     el.innerHTML = html;
-    Object.assign(el.style, {
-      position: 'fixed', top: '0', left: '0',
-      width: '1px', height: '1px',
-      overflow: 'hidden', opacity: '0.001',
-    });
     document.body.appendChild(el);
-    el.focus();
-    document.execCommand('selectAll');
+
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
     document.execCommand('copy');
+    sel?.removeAllRanges();
     document.body.removeChild(el);
+
     setCopiedHtml(true);
     if (copyHtmlTimer.current) clearTimeout(copyHtmlTimer.current);
     copyHtmlTimer.current = setTimeout(() => setCopiedHtml(false), 2500);
   }
 
   const inputCls = "h-8 w-full rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-2.5 text-sm text-[color:var(--foreground)] outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]";
+  const toggleBtn = (active: boolean) => [
+    'flex-1 rounded-md border py-1.5 text-xs font-medium transition-colors',
+    active
+      ? 'border-violet-400 bg-violet-50 text-violet-700 dark:border-violet-600 dark:bg-violet-950/40 dark:text-violet-300'
+      : 'border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--muted)] hover:bg-[color:var(--surface-hover)]',
+  ].join(' ');
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
@@ -315,9 +331,7 @@ export default function EmailTemplatePage() {
               <span className="text-sm font-medium">E-Mail Vorlage</span>
             </div>
             <h1 className="text-2xl font-semibold tracking-tight">E-Mail Vorlage</h1>
-            <p className="text-sm text-[color:var(--muted)]">
-              Wähle eine Person und einen Lead, um die Vorlage zu befüllen.
-            </p>
+            <p className="text-sm text-[color:var(--muted)]">Wähle eine Person und einen Lead, um die Vorlage zu befüllen.</p>
           </div>
         </div>
 
@@ -358,14 +372,12 @@ export default function EmailTemplatePage() {
 
           {/* LEFT: Lead list */}
           <aside className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">
-                Neue Leads
-                <span className="ml-1.5 rounded-full bg-[color:var(--surface-muted)] px-2 py-0.5 text-xs font-semibold normal-case">
-                  {filteredLeads.length}
-                </span>
-              </p>
-            </div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">
+              Neue Leads
+              <span className="ml-1.5 rounded-full bg-[color:var(--surface-muted)] px-2 py-0.5 text-xs font-semibold normal-case">
+                {filteredLeads.length}
+              </span>
+            </p>
 
             {loading ? (
               <p className="text-sm text-[color:var(--muted)] py-4 text-center">Lade…</p>
@@ -407,40 +419,35 @@ export default function EmailTemplatePage() {
                   <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">Felder anpassen</p>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-[color:var(--muted-strong)]">Behörde (Betreff &amp; Titel)</label>
+                      <label className="mb-1 block text-xs font-medium text-[color:var(--muted-strong)]">Behörde (Betreff)</label>
                       <input
                         className={inputCls}
                         value={fields.behörde}
                         onChange={e => setFields(f => ({ ...f, behörde: e.target.value }))}
-                        placeholder="z.B. München"
+                        placeholder="z.B. Bad Krozingen"
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-[color:var(--muted-strong)]">Stadt (Einladungstext)</label>
+                      <label className="mb-1 block text-xs font-medium text-[color:var(--muted-strong)]">Name (Stadt / Landkreis)</label>
                       <input
                         className={inputCls}
                         value={fields.stadt}
                         onChange={e => setFields(f => ({ ...f, stadt: e.target.value }))}
-                        placeholder="z.B. München"
+                        placeholder="z.B. Bad Krozingen"
                       />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-[color:var(--muted-strong)]">Typ</label>
+                      <div className="flex gap-2">
+                        <button onClick={() => setFields(f => ({ ...f, typ: 'stadt' }))}      className={toggleBtn(fields.typ === 'stadt')}>Stadt</button>
+                        <button onClick={() => setFields(f => ({ ...f, typ: 'landkreis' }))} className={toggleBtn(fields.typ === 'landkreis')}>Landkreis</button>
+                      </div>
                     </div>
                     <div>
                       <label className="mb-1 block text-xs font-medium text-[color:var(--muted-strong)]">Anrede</label>
                       <div className="flex gap-2">
-                        {(['herr', 'frau'] as AnredeType[]).map(t => (
-                          <button
-                            key={t}
-                            onClick={() => setFields(f => ({ ...f, anrede: t }))}
-                            className={[
-                              'flex-1 rounded-md border py-1.5 text-xs font-medium transition-colors',
-                              fields.anrede === t
-                                ? 'border-violet-400 bg-violet-50 text-violet-700 dark:border-violet-600 dark:bg-violet-950/40 dark:text-violet-300'
-                                : 'border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--muted)] hover:bg-[color:var(--surface-hover)]',
-                            ].join(' ')}
-                          >
-                            {t === 'herr' ? 'Sehr geehrter Herr' : 'Sehr geehrte Frau'}
-                          </button>
-                        ))}
+                        <button onClick={() => setFields(f => ({ ...f, anrede: 'herr' }))} className={toggleBtn(fields.anrede === 'herr')}>Sehr geehrter Herr</button>
+                        <button onClick={() => setFields(f => ({ ...f, anrede: 'frau' }))} className={toggleBtn(fields.anrede === 'frau')}>Sehr geehrte Frau</button>
                       </div>
                     </div>
                     <div>
@@ -463,7 +470,7 @@ export default function EmailTemplatePage() {
                     </div>
                   </div>
 
-                  {/* Lead data summary */}
+                  {/* Lead summary */}
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-[color:var(--border)] pt-3">
                     <span className="text-xs text-[color:var(--muted)]">
                       Lead: <span className="font-medium text-[color:var(--foreground)]">{selectedLead.name}</span>
@@ -488,7 +495,6 @@ export default function EmailTemplatePage() {
                   <div className="flex items-center justify-between border-b border-[color:var(--border)] px-5 py-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">Vorschau</p>
                     <div className="flex items-center gap-2">
-                      {/* Plain text copy */}
                       <button
                         onClick={copyToClipboard}
                         className={[
@@ -498,19 +504,11 @@ export default function EmailTemplatePage() {
                             : 'border border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--foreground)] hover:bg-[color:var(--surface-hover)]',
                         ].join(' ')}
                       >
-                        {copied ? (
-                          <>
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6.5L4.5 9.5L10.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                            Kopiert!
-                          </>
-                        ) : (
-                          <>
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="4" y="4" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.2"/><path d="M8 4V2.5A1.5 1.5 0 0 0 6.5 1H2.5A1.5 1.5 0 0 0 1 2.5v4A1.5 1.5 0 0 0 2.5 8H4" stroke="currentColor" strokeWidth="1.2"/></svg>
-                            Text
-                          </>
-                        )}
+                        {copied
+                          ? <><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6.5L4.5 9.5L10.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Kopiert!</>
+                          : <><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="4" y="4" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.2"/><path d="M8 4V2.5A1.5 1.5 0 0 0 6.5 1H2.5A1.5 1.5 0 0 0 1 2.5v4A1.5 1.5 0 0 0 2.5 8H4" stroke="currentColor" strokeWidth="1.2"/></svg>Text</>
+                        }
                       </button>
-                      {/* HTML copy */}
                       <button
                         onClick={copyHtmlToClipboard}
                         className={[
@@ -520,17 +518,10 @@ export default function EmailTemplatePage() {
                             : 'border border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--foreground)] hover:bg-[color:var(--surface-hover)]',
                         ].join(' ')}
                       >
-                        {copiedHtml ? (
-                          <>
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6.5L4.5 9.5L10.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                            Kopiert!
-                          </>
-                        ) : (
-                          <>
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 9.5L4.5 7 2 4.5M5.5 9.5h4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                            HTML
-                          </>
-                        )}
+                        {copiedHtml
+                          ? <><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6.5L4.5 9.5L10.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Kopiert!</>
+                          : <><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 9.5L4.5 7 2 4.5M5.5 9.5h4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>HTML</>
+                        }
                       </button>
                     </div>
                   </div>
