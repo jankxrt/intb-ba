@@ -14,10 +14,11 @@ const VON_PEOPLE = [
 type AnredeType = 'herr' | 'frau';
 
 type TemplateFields = {
-  behörde: string;
-  stadt:   string;
-  anrede:  AnredeType;
-  name:    string;   // Bürgermeister nachname (or however the user wants it in the greeting)
+  behörde:  string;
+  stadt:    string;
+  anrede:   AnredeType;
+  name:     string;   // Bürgermeister nachname
+  deadline: string;   // e.g. "22.05.2026"
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -53,7 +54,7 @@ function buildPlainText(f: TemplateFields): string {
     '',
     `Wir laden die ${f.stadt || '[Stadt]'} gezielt als Partnerbehörde ein. Als teilnehmende Kommune gestalten Sie die entwickelten Lösungen aktiv mit, erhalten Zugang zu Analysen aus Falldokumentationen und Befragungen und positionieren Ihre Stadt bundesweit als Vorreiter moderner Integrationsverwaltung – bei einem Aufwand von rund vier Online-Terminen jährlich.`,
     '',
-    'Wir freuen uns über eine Rückmeldung bis zum 22.05.2026, frühzeitige Rückmeldungen können bei der Vergabe der Projektplätze bevorzugt berücksichtigt werden. Gerne stellen wir Ihnen das Projekt auch in einem kurzen Telefonat persönlich vor und beantworten Ihre Fragen – sprechen Sie uns einfach an.',
+    `Wir freuen uns über eine Rückmeldung bis zum ${f.deadline || '[Datum]'}, frühzeitige Rückmeldungen können bei der Vergabe der Projektplätze bevorzugt berücksichtigt werden. Gerne stellen wir Ihnen das Projekt auch in einem kurzen Telefonat persönlich vor und beantworten Ihre Fragen – sprechen Sie uns einfach an.`,
     '',
     'Wir freuen uns darauf, gemeinsam neue Impulse für moderne Verwaltungsprozesse zu setzen und in den Austausch zu gehen.',
     '',
@@ -64,6 +65,33 @@ function buildPlainText(f: TemplateFields): string {
     'Mobil: +49 151 50715336',
     'WhatsApp: +49 151 50715336',
   ].join('\n');
+}
+
+function buildHtml(f: TemplateFields): string {
+  const anredeStr = f.name
+    ? buildAnrede(f.anrede, f.name)
+    : 'Sehr geehrte/r Herr/Frau Bürgermeister/in,';
+  const behörde = f.behörde || '[Behörde]';
+  const stadt   = f.stadt   || '[Stadt]';
+  const deadline = f.deadline || '[Datum]';
+
+  const p = (content: string) =>
+    `<p style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.38;margin:12pt 0;">${content}</p>`;
+
+  return `<div style="font-family:Arial,sans-serif;font-size:11pt;color:#000;">
+${p(`<strong><em>Betreff: Verwaltungsmodernisierung der Ausländerbehörde ${behörde}: Einladung zur Partnerschaft</em></strong>`)}
+${p(anredeStr)}
+${p('Ausländerbehörden spielen eine zentrale Rolle für die Integration internationaler Fachkräfte – doch sie arbeiten dabei täglich am Limit ihrer Kapazitäten und stehen unter erheblichem Druck. Lange Verfahren und komplexe Kommunikation belasten Verwaltung, Mitarbeitende und Antragstellende gleichermaßen und binden dringend benötigte Ressourcen.')}
+${p('Hier setzt das <strong>von der Bundesregierung geförderte Projekt zur Modernisierung von Verwaltungsabläufen</strong> der Life Initiative e.V. an: Ziel ist es, die Kommunikation mit Antragstellenden zu verbessern, Bürokratie abzubauen und Integration zu stärken.')}
+${p('Gemeinsam mit voraussichtlich sechs im Projekt beteiligten Kommunen entwickeln wir praxiserprobte, rechtssichere Werkzeuge, die Prozesse spürbar vereinfachen und Mitarbeitende nachhaltig entlasten.')}
+${p(`Wir laden die ${stadt} gezielt als Partnerbehörde ein. Als teilnehmende Kommune gestalten Sie die entwickelten Lösungen aktiv mit, erhalten Zugang zu Analysen aus Falldokumentationen und Befragungen und positionieren Ihre Stadt bundesweit als Vorreiter moderner Integrationsverwaltung – bei einem Aufwand von rund vier Online-Terminen jährlich.`)}
+${p(`Wir freuen uns über eine <strong>Rückmeldung bis zum ${deadline}</strong>, frühzeitige Rückmeldungen können bei der Vergabe der Projektplätze bevorzugt berücksichtigt werden. Gerne stellen wir Ihnen das Projekt auch in einem kurzen Telefonat persönlich vor und beantworten Ihre Fragen – sprechen Sie uns einfach an.`)}
+${p('Wir freuen uns darauf, gemeinsam neue Impulse für moderne Verwaltungsprozesse zu setzen und in den Austausch zu gehen.')}
+<p style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.38;margin:8pt 0;">Mit freundlichen Grüßen</p>
+<p style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.38;margin:4pt 0;"><strong><em>Isabel Magallanes</em></strong></p>
+<p style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.38;margin:4pt 0;"><strong><em>Referentin für die Kommunalberatung</em></strong></p>
+<p style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.38;margin:12pt 0;">Mobil: +49 151 50715336<br>WhatsApp: +49 151 50715336</p>
+</div>`;
 }
 
 // ── Template preview component ────────────────────────────────────────────────
@@ -123,7 +151,7 @@ function TemplatePreview({ f }: { f: TemplateFields }) {
 
       {/* Para 5 */}
       <p>
-        Wir freuen uns über eine <strong>Rückmeldung bis zum 22.05.2026</strong>, frühzeitige Rückmeldungen können bei der Vergabe der Projektplätze bevorzugt berücksichtigt werden. Gerne stellen wir Ihnen das Projekt auch in einem kurzen Telefonat persönlich vor und beantworten Ihre Fragen – sprechen Sie uns einfach an.
+        Wir freuen uns über eine <strong>Rückmeldung bis zum <Hi val={f.deadline} placeholder="Datum" /></strong>, frühzeitige Rückmeldungen können bei der Vergabe der Projektplätze bevorzugt berücksichtigt werden. Gerne stellen wir Ihnen das Projekt auch in einem kurzen Telefonat persönlich vor und beantworten Ihre Fragen – sprechen Sie uns einfach an.
       </p>
 
       {/* Para 6 */}
@@ -177,14 +205,17 @@ export default function EmailTemplatePage() {
   const [selectedPerson, setSelectedPerson] = useState<string>('all');
   const [selectedLead, setSelectedLead]     = useState<Lead | null>(null);
   const [copied, setCopied]         = useState(false);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [copiedHtml, setCopiedHtml] = useState(false);
+  const copyTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyHtmlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Template fields (editable)
   const [fields, setFields] = useState<TemplateFields>({
-    behörde: '',
-    stadt:   '',
-    anrede:  'herr',
-    name:    '',
+    behörde:  '',
+    stadt:    '',
+    anrede:   'herr',
+    name:     '',
+    deadline: '22.05.2026',
   });
 
   // Load leads with status "neu"
@@ -204,12 +235,13 @@ export default function EmailTemplatePage() {
   const selectLead = useCallback((lead: Lead) => {
     setSelectedLead(lead);
     const nachname = extractNachname(lead.buergermeister);
-    setFields({
+    setFields(prev => ({
+      ...prev,
       behörde: lead.name ?? '',
       stadt:   lead.stadt ?? '',
       anrede:  'herr',
       name:    nachname,
-    });
+    }));
   }, []);
 
   const filteredLeads = leads.filter(l => {
@@ -224,8 +256,26 @@ export default function EmailTemplatePage() {
       setCopied(true);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(false), 2500);
+    } catch { /* ignore */ }
+  }
+
+  async function copyHtmlToClipboard() {
+    const html = buildHtml(fields);
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }) }),
+      ]);
+      setCopiedHtml(true);
+      if (copyHtmlTimer.current) clearTimeout(copyHtmlTimer.current);
+      copyHtmlTimer.current = setTimeout(() => setCopiedHtml(false), 2500);
     } catch {
-      // fallback
+      // Fallback: copy raw HTML as text
+      try {
+        await navigator.clipboard.writeText(html);
+        setCopiedHtml(true);
+        if (copyHtmlTimer.current) clearTimeout(copyHtmlTimer.current);
+        copyHtmlTimer.current = setTimeout(() => setCopiedHtml(false), 2500);
+      } catch { /* ignore */ }
     }
   }
 
@@ -383,6 +433,15 @@ export default function EmailTemplatePage() {
                         placeholder="z.B. Mäurer"
                       />
                     </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-[color:var(--muted-strong)]">Rückmeldung bis (Deadline)</label>
+                      <input
+                        className={inputCls}
+                        value={fields.deadline}
+                        onChange={e => setFields(f => ({ ...f, deadline: e.target.value }))}
+                        placeholder="z.B. 22.05.2026"
+                      />
+                    </div>
                   </div>
 
                   {/* Lead data summary */}
@@ -409,27 +468,52 @@ export default function EmailTemplatePage() {
                 <section className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] shadow-sm">
                   <div className="flex items-center justify-between border-b border-[color:var(--border)] px-5 py-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">Vorschau</p>
-                    <button
-                      onClick={copyToClipboard}
-                      className={[
-                        'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                        copied
-                          ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300'
-                          : 'border border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--foreground)] hover:bg-[color:var(--surface-hover)]',
-                      ].join(' ')}
-                    >
-                      {copied ? (
-                        <>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6.5L4.5 9.5L10.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                          Kopiert!
-                        </>
-                      ) : (
-                        <>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="4" y="4" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.2"/><path d="M8 4V2.5A1.5 1.5 0 0 0 6.5 1H2.5A1.5 1.5 0 0 0 1 2.5v4A1.5 1.5 0 0 0 2.5 8H4" stroke="currentColor" strokeWidth="1.2"/></svg>
-                          In Zwischenablage
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {/* Plain text copy */}
+                      <button
+                        onClick={copyToClipboard}
+                        className={[
+                          'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                          copied
+                            ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300'
+                            : 'border border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--foreground)] hover:bg-[color:var(--surface-hover)]',
+                        ].join(' ')}
+                      >
+                        {copied ? (
+                          <>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6.5L4.5 9.5L10.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            Kopiert!
+                          </>
+                        ) : (
+                          <>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="4" y="4" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.2"/><path d="M8 4V2.5A1.5 1.5 0 0 0 6.5 1H2.5A1.5 1.5 0 0 0 1 2.5v4A1.5 1.5 0 0 0 2.5 8H4" stroke="currentColor" strokeWidth="1.2"/></svg>
+                            Text
+                          </>
+                        )}
+                      </button>
+                      {/* HTML copy */}
+                      <button
+                        onClick={copyHtmlToClipboard}
+                        className={[
+                          'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                          copiedHtml
+                            ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300'
+                            : 'border border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--foreground)] hover:bg-[color:var(--surface-hover)]',
+                        ].join(' ')}
+                      >
+                        {copiedHtml ? (
+                          <>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6.5L4.5 9.5L10.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            Kopiert!
+                          </>
+                        ) : (
+                          <>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 9.5L4.5 7 2 4.5M5.5 9.5h4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            HTML
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                   <div className="px-6 py-5">
                     <TemplatePreview f={fields} />
