@@ -259,24 +259,39 @@ export default function EmailTemplatePage() {
     } catch { /* ignore */ }
   }
 
-  function copyHtmlToClipboard() {
+  async function copyHtmlToClipboard() {
     const html = buildHtml(fields);
-    // Render into a hidden off-screen element, select it, and execCommand copy.
-    // This puts rich HTML on the clipboard so email clients paste it formatted.
+
+    // Modern path: ClipboardItem with text/html + text/plain fallback
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html':  new Blob([html],                  { type: 'text/html'  }),
+            'text/plain': new Blob([buildPlainText(fields)], { type: 'text/plain' }),
+          }),
+        ]);
+        setCopiedHtml(true);
+        if (copyHtmlTimer.current) clearTimeout(copyHtmlTimer.current);
+        copyHtmlTimer.current = setTimeout(() => setCopiedHtml(false), 2500);
+        return;
+      } catch { /* fall through to execCommand */ }
+    }
+
+    // Legacy path: contenteditable element + execCommand
+    // Must be contenteditable for the browser to put rich HTML on the clipboard.
     const el = document.createElement('div');
+    el.contentEditable = 'true';
     el.innerHTML = html;
     Object.assign(el.style, {
-      position: 'fixed', top: '-9999px', left: '-9999px',
-      opacity: '0', pointerEvents: 'none', userSelect: 'text',
+      position: 'fixed', top: '0', left: '0',
+      width: '1px', height: '1px',
+      overflow: 'hidden', opacity: '0.001',
     });
     document.body.appendChild(el);
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
+    el.focus();
+    document.execCommand('selectAll');
     document.execCommand('copy');
-    sel?.removeAllRanges();
     document.body.removeChild(el);
     setCopiedHtml(true);
     if (copyHtmlTimer.current) clearTimeout(copyHtmlTimer.current);
