@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, type Lead } from '@/lib/supabase';
 import { useDragScroll } from '@/lib/useDragScroll';
 
@@ -67,17 +67,46 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
-type SortField = 'name' | 'stadt' | 'land' | 'status' | 'von' | 'created_at';
+type SortField = 'name' | 'stadt' | 'land' | 'partei' | 'status' | 'von' | 'created_at';
+
+const BUNDESLAENDER = [
+  'Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen',
+  'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen',
+  'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen',
+  'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen',
+];
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const inputCls = "h-9 w-full rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 text-sm text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]";
+const selectCls = inputCls + " appearance-none pr-9";
+
+function SelectArrow() {
+  return <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+}
 
 function EditLeadModal({ lead, onSave, onCancel }: {
   lead: Lead;
   onSave: (updated: Partial<Lead>) => void;
   onCancel: () => void;
 }) {
-  const [von, setVon] = useState(lead.von ?? '');
-  const [status, setStatus] = useState(lead.status);
-  const [notes, setNotes] = useState(lead.notes ?? '');
-  const [emails, setEmails] = useState<string[]>(
+  const [name, setName]               = useState(lead.name);
+  const [stadt, setStadt]             = useState(lead.stadt ?? '');
+  const [land, setLand]               = useState(lead.land ?? '');
+  const [buergermeister, setBuerger]  = useState(lead.buergermeister ?? '');
+  const [partei, setPartei]           = useState(lead.partei ?? '');
+  const [einwohner, setEinwohner]     = useState(lead.einwohner != null ? String(lead.einwohner) : '');
+  const [von, setVon]                 = useState(lead.von ?? '');
+  const [status, setStatus]           = useState(lead.status);
+  const [notes, setNotes]             = useState(lead.notes ?? '');
+  const [emails, setEmails]           = useState<string[]>(
     lead.kontaktdaten ? lead.kontaktdaten.split(/[;,]/).map(s => s.trim()).filter(Boolean) : ['']
   );
 
@@ -85,76 +114,124 @@ function EditLeadModal({ lead, onSave, onCancel }: {
   function addEmail() { setEmails(prev => [...prev, '']); }
   function removeEmail(i: number) { setEmails(prev => prev.length > 1 ? prev.filter((_, j) => j !== i) : ['']); }
 
+  function handleSave() {
+    const ewnNum = einwohner.trim() ? parseInt(einwohner.replace(/\D/g, ''), 10) : null;
+    onSave({
+      name:           name.trim() || lead.name,
+      stadt:          stadt.trim()        || null,
+      land:           land                || null,
+      buergermeister: buergermeister.trim() || null,
+      partei:         partei.trim()       || null,
+      einwohner:      isNaN(ewnNum as number) ? null : ewnNum,
+      von:            von                 || null,
+      status,
+      notes:          notes.trim()        || null,
+      kontaktdaten:   emails.filter(Boolean).join('; ') || null,
+    });
+  }
+
   return (
     <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onCancel}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
-        className="animate-scale-in relative w-full max-w-md rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 shadow-xl"
+        className="animate-scale-in relative flex w-full max-w-lg flex-col rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] shadow-xl"
+        style={{ maxHeight: 'calc(100vh - 2rem)' }}
         onClick={e => e.stopPropagation()}
       >
-        <h2 className="mb-0.5 text-base font-semibold text-[color:var(--foreground)]">Lead bearbeiten</h2>
-        <p className="mb-5 text-sm text-[color:var(--muted)] line-clamp-1">{lead.name}</p>
+        {/* Header */}
+        <div className="shrink-0 border-b border-[color:var(--border)] px-6 py-4">
+          <h2 className="text-base font-semibold text-[color:var(--foreground)]">Lead bearbeiten</h2>
+        </div>
 
-        <div className="flex flex-col gap-4">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Zuständig</label>
-            <div className="relative">
-              <select value={von} onChange={e => setVon(e.target.value)} autoFocus
-                className="h-10 w-full appearance-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-3 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]">
-                <option value="">Nicht zugewiesen</option>
-                {VON_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
-              </select>
-              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        {/* Scrollable body */}
+        <div className="overflow-y-auto px-6 py-5">
+          {/* Section: Stammdaten */}
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[color:var(--muted)]">Stammdaten</p>
+          <div className="mb-5 grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <Field label="Name">
+                <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Name" className={inputCls} />
+              </Field>
+            </div>
+            <Field label="Stadt">
+              <input value={stadt} onChange={e => setStadt(e.target.value)} placeholder="Stadt" className={inputCls} />
+            </Field>
+            <Field label="Bundesland">
+              <div className="relative">
+                <select value={land} onChange={e => setLand(e.target.value)} className={selectCls}>
+                  <option value="">—</option>
+                  {BUNDESLAENDER.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+                <SelectArrow />
+              </div>
+            </Field>
+            <Field label="Bürgermeister/in">
+              <input value={buergermeister} onChange={e => setBuerger(e.target.value)} placeholder="Name" className={inputCls} />
+            </Field>
+            <Field label="Partei">
+              <input value={partei} onChange={e => setPartei(e.target.value)} placeholder="z.B. SPD" className={inputCls} />
+            </Field>
+            <div className="col-span-2">
+              <Field label="Einwohner">
+                <input type="number" min="0" value={einwohner} onChange={e => setEinwohner(e.target.value)} placeholder="z.B. 25000" className={inputCls} />
+              </Field>
             </div>
           </div>
 
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Status</label>
-            <div className="relative">
-              <select value={status} onChange={e => setStatus(e.target.value)}
-                className="h-10 w-full appearance-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-3 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]">
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <label className="text-sm font-medium text-[color:var(--muted-strong)]">E-Mail-Adressen</label>
-              <button type="button" onClick={addEmail} className="inline-flex items-center gap-1 rounded-md border border-[color:var(--border)] px-2 py-0.5 text-xs text-[color:var(--muted)] hover:bg-[color:var(--surface-hover)] transition-colors">
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                Hinzufügen
-              </button>
-            </div>
-            <div className="flex flex-col gap-2">
-              {emails.map((email, i) => (
-                <div key={i} className="flex gap-2">
-                  <input type="email" value={email} onChange={e => setEmail(i, e.target.value)} placeholder="email@beispiel.de"
-                    className="h-9 flex-1 rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 font-mono text-xs text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]" />
-                  <button type="button" onClick={() => removeEmail(i)} className="flex h-9 w-9 items-center justify-center rounded-md border border-[color:var(--border)] text-[color:var(--muted)] hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-800 dark:hover:bg-red-950/40 dark:hover:text-red-400 transition-colors">
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                  </button>
+          {/* Section: Outreach */}
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[color:var(--muted)]">Outreach</p>
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Zuständig">
+                <div className="relative">
+                  <select value={von} onChange={e => setVon(e.target.value)} className={selectCls}>
+                    <option value="">Nicht zugewiesen</option>
+                    {VON_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                  <SelectArrow />
                 </div>
-              ))}
+              </Field>
+              <Field label="Status">
+                <div className="relative">
+                  <select value={status} onChange={e => setStatus(e.target.value)} className={selectCls}>
+                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <SelectArrow />
+                </div>
+              </Field>
             </div>
-          </div>
 
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-[color:var(--muted-strong)]">Anmerkungen</label>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optionale Notizen zum Lead…" rows={3}
-              className="w-full resize-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]" />
+            <Field label="E-Mail-Adressen">
+              <div className="flex flex-col gap-2">
+                {emails.map((email, i) => (
+                  <div key={i} className="flex gap-2">
+                    <input type="email" value={email} onChange={e => setEmail(i, e.target.value)} placeholder="email@beispiel.de"
+                      className="h-9 flex-1 rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 font-mono text-xs text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]" />
+                    <button type="button" onClick={() => removeEmail(i)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[color:var(--border)] text-[color:var(--muted)] hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-800 dark:hover:bg-red-950/40 dark:hover:text-red-400 transition-colors">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                    </button>
+                  </div>
+                ))}
+                <button type="button" onClick={addEmail} className="inline-flex w-fit items-center gap-1 rounded-md border border-[color:var(--border)] px-2.5 py-1 text-xs text-[color:var(--muted)] hover:bg-[color:var(--surface-hover)] transition-colors">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                  Hinzufügen
+                </button>
+              </div>
+            </Field>
+
+            <Field label="Anmerkungen">
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optionale Notizen…" rows={3}
+                className="w-full resize-none rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]" />
+            </Field>
           </div>
         </div>
 
-        <div className="mt-5 flex justify-end gap-2">
+        {/* Footer */}
+        <div className="shrink-0 flex justify-end gap-2 border-t border-[color:var(--border)] px-6 py-4">
           <button onClick={onCancel} className="h-9 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-4 text-sm font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]">
             Abbrechen
           </button>
-          <button
-            onClick={() => onSave({ von: von || null, status, notes: notes || null, kontaktdaten: emails.filter(Boolean).join('; ') || null })}
-            className="h-9 rounded-md bg-[color:var(--foreground)] px-4 text-sm font-semibold text-[color:var(--background)] transition-opacity hover:opacity-80"
-          >
+          <button onClick={handleSave} className="h-9 rounded-md bg-[color:var(--foreground)] px-4 text-sm font-semibold text-[color:var(--background)] transition-opacity hover:opacity-80">
             Speichern
           </button>
         </div>
@@ -209,8 +286,13 @@ export default function OutreachPage() {
   }
 
   async function updateLead(id: number, patch: Partial<Lead>) {
+    const original = leads.find(l => l.id === id);
     setLeads(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
-    await supabase.from('leads').update(patch).eq('id', id);
+    const { error } = await supabase.from('leads').update(patch).eq('id', id);
+    if (error) {
+      if (original) setLeads(prev => prev.map(l => l.id === id ? original : l));
+      setError(`Speichern fehlgeschlagen: ${error.message}`);
+    }
   }
 
   async function deleteLead(id: number) {
@@ -276,6 +358,16 @@ export default function OutreachPage() {
               )}
             </p>
           </div>
+          <a
+            href="/outreach/email"
+            className="inline-flex items-center gap-2 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-4 py-2 text-sm font-medium text-[color:var(--foreground)] shadow-sm transition-colors hover:bg-[color:var(--surface-muted)]"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="M1 5.5l7 4.5 7-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            E-Mail Vorlage
+          </a>
         </header>
 
         {error && (
@@ -356,6 +448,10 @@ export default function OutreachPage() {
                     <th onClick={() => handleSort('land')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 130 }}>
                       <span className="inline-flex items-center">Bundesland <SortIcon active={sortField === 'land'} dir={sortDir} /></span>
                     </th>
+                    {/* Partei */}
+                    <th onClick={() => handleSort('partei')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 90 }}>
+                      <span className="inline-flex items-center">Partei <SortIcon active={sortField === 'partei'} dir={sortDir} /></span>
+                    </th>
                     {/* E-Mail — not sortable */}
                     <th className="border-b border-[color:var(--border)] px-3 py-3 font-semibold" style={{ minWidth: 210 }}>E-Mail</th>
                     {/* Von */}
@@ -390,6 +486,15 @@ export default function OutreachPage() {
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         <div className="line-clamp-1 leading-snug">{lead.land ?? '—'}</div>
+                      </td>
+                      <td className="px-3 py-2.5 align-middle">
+                        {lead.partei ? (
+                          <span className="inline-flex items-center rounded-full border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-2 py-0.5 text-xs font-medium">
+                            {lead.partei}
+                          </span>
+                        ) : (
+                          <span className="text-[color:var(--muted)]">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         {lead.kontaktdaten ? (

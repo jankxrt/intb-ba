@@ -1,9 +1,8 @@
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
-import Papa from "papaparse";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import type { ABHEntry } from "./LeafletMap";
+import type { ABHEntry } from "@/lib/supabase";
 
 type LeafletMapProps = { entries: ABHEntry[]; radiusActive: boolean; onRadiusEntries: (e: ABHEntry[] | null) => void; };
 const LeafletMapComponent = dynamic(() => import("./LeafletMap"), { ssr: false, loading: () => null }) as React.FC<LeafletMapProps>;
@@ -91,53 +90,10 @@ export default function MapPage() {
   const [sortAsc, setSortAsc] = useState(true);
   const [filter, setFilter]   = useState("");
 
-  const loadCSV = () => {
-    Papa.parse<string[]>(`/data/abs_bundesland.csv?t=${Date.now()}`, {
-      download: true,
-      skipEmptyLines: true,
-      encoding: "ISO-8859-1",
-      complete: (result) => {
-        const [headers, ...rows] = result.data;
-        const idx = (name: string) => headers.findIndex((h: string) => h.trim() === name);
-        const nameIdx  = idx("Name");
-        const stadtIdx = idx("Stadt");
-        const addrIdx  = idx("Adresse");
-        const latIdx   = idx("Lat");
-        const lngIdx   = idx("Lng");
-        const landIdx  = idx("Land");
-        const parteiIdx = idx("Partei");
-        const ewnIdx   = idx("Einwohner");
-        const kdIdx    = idx("Kontaktdaten");
-        if (nameIdx < 0 || stadtIdx < 0 || latIdx < 0 || lngIdx < 0) return;
-        const seen = new Set<string>();
-        const list: ABHEntry[] = [];
-        for (const row of rows) {
-          const stadt  = row[stadtIdx]?.trim() ?? "";
-          const latStr = row[latIdx]?.trim() ?? "";
-          const lngStr = row[lngIdx]?.trim() ?? "";
-          if (!stadt || !latStr || !lngStr || seen.has(stadt)) continue;
-          seen.add(stadt);
-          list.push({
-            name:         row[nameIdx]?.trim() ?? "",
-            stadt,
-            adresse:      addrIdx >= 0  ? row[addrIdx]?.trim()  ?? "" : "",
-            coordinates:  [parseFloat(latStr), parseFloat(lngStr)],
-            land:         landIdx  >= 0 ? row[landIdx]?.trim()   ?? "" : "",
-            partei:       parteiIdx >= 0 ? row[parteiIdx]?.trim() ?? "" : "",
-            einwohner:    ewnIdx   >= 0 ? row[ewnIdx]?.trim()    ?? "" : "",
-            kontaktdaten: kdIdx    >= 0 ? row[kdIdx]?.trim()     ?? "" : "",
-          });
-        }
-        setEntries(list);
-      },
-      error: () => {},
-    });
-  };
-
   useEffect(() => {
-    loadCSV();
-    const interval = setInterval(loadCSV, 5000);
-    return () => clearInterval(interval);
+    supabase.from("auslaenderbehoerden").select("*").order("name").then(({ data }) => {
+      if (data) setEntries(data);
+    });
   }, []);
 
   // Load existing lead statuses
@@ -152,14 +108,15 @@ export default function MapPage() {
     setAddingLead(entry.name);
     const einwStr = entry.einwohner?.replace(/\D/g, "");
     await supabase.from("leads").insert({
-      name:         entry.name,
-      stadt:        entry.stadt        || null,
-      land:         entry.land         || null,
-      partei:       entry.partei       || null,
-      kontaktdaten: entry.kontaktdaten || null,
-      einwohner:    einwStr ? parseInt(einwStr, 10) : null,
+      name:          entry.name,
+      stadt:         entry.stadt          || null,
+      land:          entry.land           || null,
+      buergermeister: entry.buergermeister || null,
+      partei:        entry.partei         || null,
+      kontaktdaten:  entry.kontaktdaten   || null,
+      einwohner:     einwStr ? parseInt(einwStr, 10) : null,
       von,
-      notes:        notes || null,
+      notes:         notes || null,
     });
     setLeadStatus(prev => new Map([...prev, [entry.name, "neu"]]));
     setAddingLead(null);
@@ -187,11 +144,12 @@ export default function MapPage() {
       ? radiusEntries.filter(e =>
           e.name.toLowerCase().includes(q) ||
           e.stadt.toLowerCase().includes(q) ||
-          e.adresse.toLowerCase().includes(q)
+          (e.adresse ?? "").toLowerCase().includes(q)
         )
       : radiusEntries;
     return [...list].sort((a, b) => {
-      const va = a[sortKey] ?? "", vb = b[sortKey] ?? "";
+      const va = (a[sortKey] ?? "") as string;
+      const vb = (b[sortKey] ?? "") as string;
       return sortAsc ? va.localeCompare(vb, "de") : vb.localeCompare(va, "de");
     });
   }, [radiusEntries, filter, sortKey, sortAsc]);
@@ -327,7 +285,7 @@ export default function MapPage() {
                           </td>
                           <td className="px-4 py-2.5 font-medium">{entry.name}</td>
                           <td className="px-4 py-2.5">{entry.stadt}</td>
-                          <td className="px-4 py-2.5 text-xs font-mono text-[color:var(--muted)]">{entry.adresse || "—"}</td>
+                          <td className="px-4 py-2.5 text-xs font-mono text-[color:var(--muted)]">{entry.adresse ?? "—"}</td>
                           {/* Lead status badge */}
                           <td className="px-4 py-2.5">
                             {status ? (
