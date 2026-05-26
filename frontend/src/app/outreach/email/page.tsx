@@ -259,24 +259,28 @@ export default function EmailTemplatePage() {
     } catch { /* ignore */ }
   }
 
-  async function copyHtmlToClipboard() {
+  function copyHtmlToClipboard() {
     const html = buildHtml(fields);
-    try {
-      await navigator.clipboard.write([
-        new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }) }),
-      ]);
-      setCopiedHtml(true);
-      if (copyHtmlTimer.current) clearTimeout(copyHtmlTimer.current);
-      copyHtmlTimer.current = setTimeout(() => setCopiedHtml(false), 2500);
-    } catch {
-      // Fallback: copy raw HTML as text
-      try {
-        await navigator.clipboard.writeText(html);
-        setCopiedHtml(true);
-        if (copyHtmlTimer.current) clearTimeout(copyHtmlTimer.current);
-        copyHtmlTimer.current = setTimeout(() => setCopiedHtml(false), 2500);
-      } catch { /* ignore */ }
-    }
+    // Render into a hidden off-screen element, select it, and execCommand copy.
+    // This puts rich HTML on the clipboard so email clients paste it formatted.
+    const el = document.createElement('div');
+    el.innerHTML = html;
+    Object.assign(el.style, {
+      position: 'fixed', top: '-9999px', left: '-9999px',
+      opacity: '0', pointerEvents: 'none', userSelect: 'text',
+    });
+    document.body.appendChild(el);
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    document.execCommand('copy');
+    sel?.removeAllRanges();
+    document.body.removeChild(el);
+    setCopiedHtml(true);
+    if (copyHtmlTimer.current) clearTimeout(copyHtmlTimer.current);
+    copyHtmlTimer.current = setTimeout(() => setCopiedHtml(false), 2500);
   }
 
   const inputCls = "h-8 w-full rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-2.5 text-sm text-[color:var(--foreground)] outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]";
