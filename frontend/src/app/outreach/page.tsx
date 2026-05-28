@@ -26,6 +26,24 @@ function rowStyle(status: string): React.CSSProperties {
   }
 }
 
+const parteiClass: Record<string, string> = {
+  'AfD':   'bg-blue-50   text-blue-700   border-blue-200   dark:bg-blue-950/40  dark:text-blue-300  dark:border-blue-800',
+  'CDU':   'bg-gray-100  text-gray-800   border-gray-300   dark:bg-gray-800/60  dark:text-gray-200  dark:border-gray-600',
+  'CSU':   'bg-gray-100  text-gray-800   border-gray-300   dark:bg-gray-800/60  dark:text-gray-200  dark:border-gray-600',
+  'SPD':   'bg-red-50    text-red-700    border-red-200    dark:bg-red-950/40   dark:text-red-300   dark:border-red-800',
+  'FDP':   'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950/40 dark:text-yellow-300 dark:border-yellow-800',
+  'Grüne': 'bg-green-50  text-green-700  border-green-200  dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
+  'Linke': 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 dark:bg-fuchsia-950/40 dark:text-fuchsia-300 dark:border-fuchsia-800',
+  'BSW':   'bg-rose-50   text-rose-700   border-rose-200   dark:bg-rose-950/40  dark:text-rose-300  dark:border-rose-800',
+};
+
+function parteiCls(partei: string | null): string {
+  if (!partei) return '';
+  // match on first token in case value is e.g. "CDU/CSU"
+  const key = Object.keys(parteiClass).find(k => partei.toLowerCase().includes(k.toLowerCase()));
+  return key ? parteiClass[key] : 'bg-[color:var(--surface-muted)] text-[color:var(--foreground)] border-[color:var(--border)]';
+}
+
 const chevronBg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E")`;
 const chevronStyle = { backgroundImage: chevronBg, backgroundRepeat: 'no-repeat' as const, backgroundPosition: 'right 6px center' };
 
@@ -496,7 +514,7 @@ export default function OutreachPage() {
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         {lead.partei ? (
-                          <span className="inline-flex items-center rounded-full border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-2 py-0.5 text-xs font-medium">
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${parteiCls(lead.partei)}`}>
                             {lead.partei}
                           </span>
                         ) : (
