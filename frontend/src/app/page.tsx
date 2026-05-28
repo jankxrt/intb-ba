@@ -294,9 +294,7 @@ function EditABHModal({ entry, onSave, onCancel }: {
                 <select className={inputCls + ' appearance-none pr-8'} value={fields.typ} onChange={e => set('typ', e.target.value)}>
                   <option value="">–</option>
                   <option value="Stadt">Stadt</option>
-                  <option value="Kreis">Kreis</option>
                   <option value="Landkreis">Landkreis</option>
-                  <option value="Gemeinde">Gemeinde</option>
                 </select>
                 <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </div>
@@ -600,9 +598,8 @@ export default function App() {
     if (col === 'typ') {
       // Prefer stored typ; fall back to name-derived value
       const typ = entry.typ?.trim() || deriveTyp(entry.name);
-      const cls = /^Stadt$/i.test(typ)   ? 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800'
-                : /Kreis|Landkreis/i.test(typ) ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
-                : /^Gemeinde$/i.test(typ) ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+      const cls = /^Stadt$/i.test(typ)     ? 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800'
+                : /Landkreis|Kreis/i.test(typ) ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
                 : 'bg-[color:var(--surface-muted)] text-[color:var(--muted)] border border-[color:var(--border)]';
       return <div className="flex w-full justify-center"><div className={`table-button ${cls}`}>{typ}</div></div>;
     }
