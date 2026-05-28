@@ -356,8 +356,9 @@ export default function App() {
   const [addingLead, setAddingLead]         = useState<string | null>(null);
   const [pendingLeadEntry, setPendingLeadEntry] = useState<ABHEntry | null>(null);
 
-  const [showAddABH, setShowAddABH]   = useState(false);
-  const [editingEntry, setEditingEntry] = useState<ABHEntry | null>(null);
+  const [showAddABH, setShowAddABH]         = useState(false);
+  const [editingEntry, setEditingEntry]     = useState<ABHEntry | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   useEffect(() => {
     supabase.from('auslaenderbehoerden').select('*').order('name').then(({ data, error: err }) => {
@@ -502,6 +503,17 @@ export default function App() {
       return;
     }
     setEditingEntry(null);
+  }
+
+  async function deleteABH(id: number) {
+    setEntries(prev => prev.filter(e => e.id !== id));
+    setConfirmDeleteId(null);
+    const { error: deleteErr } = await supabase.from('auslaenderbehoerden').delete().eq('id', id);
+    if (deleteErr) {
+      setError(`Fehler beim Löschen: ${deleteErr.message}`);
+      // Re-fetch to restore state if delete failed
+      supabase.from('auslaenderbehoerden').select('*').order('name').then(({ data }) => { if (data) setEntries(data); });
+    }
   }
 
   const uniqueBundeslander = Array.from(new Set(entries.map(e => e.land).filter(Boolean) as string[])).sort();
@@ -798,9 +810,25 @@ export default function App() {
                               </button>
                             </td>
                             <td className="px-1 py-2.5 align-middle">
-                              <button onClick={() => setEditingEntry(entry)} title="Eintrag bearbeiten" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--muted)] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--foreground)]">
-                                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M8.5 1.5a1.5 1.5 0 0 1 2.121 2.121L4 10.243 1 11l.757-3L8.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => { setConfirmDeleteId(null); setEditingEntry(entry); }} title="Eintrag bearbeiten" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--muted)] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--foreground)]">
+                                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M8.5 1.5a1.5 1.5 0 0 1 2.121 2.121L4 10.243 1 11l.757-3L8.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                </button>
+                                {confirmDeleteId === entry.id ? (
+                                  <>
+                                    <button onClick={() => deleteABH(entry.id)} className="h-7 rounded-md bg-red-500 px-2 text-xs font-medium text-white hover:bg-red-600 transition-colors">
+                                      Löschen
+                                    </button>
+                                    <button onClick={() => setConfirmDeleteId(null)} className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-[color:var(--border)] text-[color:var(--muted)] hover:bg-[color:var(--surface-hover)] transition-colors text-xs">
+                                      ✕
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button onClick={() => setConfirmDeleteId(entry.id)} title="Eintrag löschen" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] text-[color:var(--muted)] transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400">
+                                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 3h8M5 3V2h2v1M4.5 3v6.5M7.5 3v6.5M3 3l.5 7h5l.5-7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             {COLUMNS.map(col => (
                               <td key={col.key} title={(entry[col.key] ?? '') as string} className="px-3 py-2.5 align-middle">
