@@ -3,6 +3,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { ABHEntry } from '@/lib/supabase';
 
+type DistMode = 'sequential' | 'distributed';
+
 const parteiClass: Record<string, string> = {
   'AfD':   'bg-blue-50   text-blue-700   border-blue-200   dark:bg-blue-950/40  dark:text-blue-300  dark:border-blue-800',
   'CDU':   'bg-gray-100  text-gray-800   border-gray-300   dark:bg-gray-800/60  dark:text-gray-200  dark:border-gray-600',
@@ -27,11 +29,38 @@ function formatEinwohner(raw: string | null): string {
   return n.toLocaleString('de-DE');
 }
 
+/** Round-robin pick from each Bundesland so the batch covers all states evenly. */
+function distributeAcrossStates(entries: ABHEntry[], total: number): ABHEntry[] {
+  const byState = new Map<string, ABHEntry[]>();
+  for (const e of entries) {
+    const land = e.land ?? 'Unbekannt';
+    if (!byState.has(land)) byState.set(land, []);
+    byState.get(land)!.push(e);
+  }
+  // States with more uncontacted entries first so they absorb the remainder
+  const groups = [...byState.values()].sort((a, b) => b.length - a.length);
+  const result: ABHEntry[] = [];
+  let round = 0;
+  while (result.length < total) {
+    let added = false;
+    for (const group of groups) {
+      if (group.length > round && result.length < total) {
+        result.push(group[round]);
+        added = true;
+      }
+    }
+    if (!added) break;
+    round++;
+  }
+  return result;
+}
+
 export default function PlanungPage() {
-  const [allABH, setAllABH] = useState<ABHEntry[]>([]);
+  const [allABH, setAllABH]       = useState<ABHEntry[]>([]);
   const [leadNames, setLeadNames] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [count, setCount] = useState(10);
+  const [loading, setLoading]     = useState(true);
+  const [count, setCount]         = useState(10);
+  const [distMode, setDistMode]   = useState<DistMode>('sequential');
   const [addingIds, setAddingIds] = useState<Set<number>>(new Set());
   const [addingAll, setAddingAll] = useState(false);
 
@@ -41,7 +70,7 @@ export default function PlanungPage() {
         supabase.from('auslaenderbehoerden').select('*').order('name'),
         supabase.from('leads').select('name'),
       ]);
-      if (abhRes.data) setAllABH(abhRes.data);
+      if (abhRes.data)   setAllABH(abhRes.data);
       if (leadsRes.data) setLeadNames(new Set(leadsRes.data.map((l: { name: string }) => l.name)));
       setLoading(false);
     }
@@ -50,16 +79,44 @@ export default function PlanungPage() {
 
   const uncontacted = useMemo(
     () => allABH.filter(e => !leadNames.has(e.name)),
-    [allABH, leadNames]
+    [allABH, leadNames],
   );
 
-  const shown = useMemo(
-    () => uncontacted.slice(0, Math.max(1, count)),
-    [uncontacted, count]
-  );
+  const shown = useMemo(() => {
+    const n = Math.max(1, count);
+    if (distMode === 'sequential') return uncontacted.slice(0, n);
+    return distributeAcrossStates(uncontacted, n);
+  }, [uncontacted, count, distMode]);
+
+  /** Shown entries annotated with a flag for the first row of each state (used in the table). */
+  const shownForTable = useMemo(() => {
+    if (distMode !== 'distributed') {
+      return shown.map(e => ({ entry: e, isFirstOfState: false }));
+    }
+    const sorted = [...shown].sort((a, b) =>
+      (a.land ?? 'Unbekannt').localeCompare(b.land ?? 'Unbekannt', 'de'),
+    );
+    let lastLand = '';
+    return sorted.map(e => {
+      const land = e.land ?? 'Unbekannt';
+      const isFirstOfState = land !== lastLand;
+      lastLand = land;
+      return { entry: e, isFirstOfState };
+    });
+  }, [shown, distMode]);
+
+  /** State breakdown for the info chips (distributed mode). */
+  const stateBreakdown = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const e of shown) {
+      const land = e.land ?? 'Unbekannt';
+      map.set(land, (map.get(land) ?? 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }, [shown]);
 
   const contactedCount = allABH.length - uncontacted.length;
-  const progressPct = allABH.length > 0 ? Math.round((contactedCount / allABH.length) * 100) : 0;
+  const progressPct    = allABH.length > 0 ? Math.round((contactedCount / allABH.length) * 100) : 0;
 
   async function addOne(entry: ABHEntry) {
     if (addingIds.has(entry.id) || leadNames.has(entry.name)) return;
@@ -67,19 +124,15 @@ export default function PlanungPage() {
     const einwStr = entry.einwohner?.replace(/\D/g, '');
     const { error } = await supabase.from('leads').insert({
       name:           entry.name,
-      stadt:          entry.stadt          || null,
-      land:           entry.land           || null,
-      buergermeister: entry.buergermeister || null,
-      partei:         entry.partei         || null,
-      kontaktdaten:   entry.kontaktdaten   || null,
+      stadt:          entry.stadt           || null,
+      land:           entry.land            || null,
+      buergermeister: entry.buergermeister  || null,
+      partei:         entry.partei          || null,
+      kontaktdaten:   entry.kontaktdaten    || null,
       einwohner:      einwStr ? parseInt(einwStr, 10) : null,
-      von:            null,
-      notes:          null,
-      status:         'neu',
+      von:   null, notes: null, status: 'neu',
     });
-    if (!error) {
-      setLeadNames(prev => new Set([...prev, entry.name]));
-    }
+    if (!error) setLeadNames(prev => new Set([...prev, entry.name]));
     setAddingIds(prev => { const next = new Set(prev); next.delete(entry.id); return next; });
   }
 
@@ -88,35 +141,31 @@ export default function PlanungPage() {
     if (toAdd.length === 0) return;
     setAddingAll(true);
     setAddingIds(prev => new Set([...prev, ...toAdd.map(e => e.id)]));
-    await Promise.all(
-      toAdd.map(async entry => {
-        const einwStr = entry.einwohner?.replace(/\D/g, '');
-        const { error } = await supabase.from('leads').insert({
-          name:           entry.name,
-          stadt:          entry.stadt          || null,
-          land:           entry.land           || null,
-          buergermeister: entry.buergermeister || null,
-          partei:         entry.partei         || null,
-          kontaktdaten:   entry.kontaktdaten   || null,
-          einwohner:      einwStr ? parseInt(einwStr, 10) : null,
-          von:            null,
-          notes:          null,
-          status:         'neu',
-        });
-        if (!error) {
-          setLeadNames(prev => new Set([...prev, entry.name]));
-        }
-        setAddingIds(prev => { const next = new Set(prev); next.delete(entry.id); return next; });
-      })
-    );
+    await Promise.all(toAdd.map(async entry => {
+      const einwStr = entry.einwohner?.replace(/\D/g, '');
+      const { error } = await supabase.from('leads').insert({
+        name:           entry.name,
+        stadt:          entry.stadt           || null,
+        land:           entry.land            || null,
+        buergermeister: entry.buergermeister  || null,
+        partei:         entry.partei          || null,
+        kontaktdaten:   entry.kontaktdaten    || null,
+        einwohner:      einwStr ? parseInt(einwStr, 10) : null,
+        von: null, notes: null, status: 'neu',
+      });
+      if (!error) setLeadNames(prev => new Set([...prev, entry.name]));
+      setAddingIds(prev => { const next = new Set(prev); next.delete(entry.id); return next; });
+    }));
     setAddingAll(false);
   }
+
+  const pendingShown = shown.filter(e => !leadNames.has(e.name)).length;
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
 
-        {/* Page header */}
+        {/* Header */}
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Planung</h1>
           {!loading && (
@@ -126,35 +175,32 @@ export default function PlanungPage() {
           )}
         </header>
 
-        {/* Stats + control card */}
+        {/* Control card */}
         {loading ? (
           <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-5 py-6 text-sm text-[color:var(--muted)] shadow-sm">
             Lade Daten…
           </div>
         ) : (
           <section className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5 shadow-sm">
-            <div className="flex flex-wrap items-center gap-6">
+            {/* Row 1: stats + controls */}
+            <div className="flex flex-wrap items-center gap-5">
+
               {/* Big counter */}
               <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-bold tabular-nums text-[color:var(--foreground)]">
-                  {uncontacted.length}
-                </span>
+                <span className="text-4xl font-bold tabular-nums">{uncontacted.length}</span>
                 <span className="text-sm text-[color:var(--muted)]">nicht kontaktiert</span>
               </div>
 
               <div className="hidden h-10 w-px bg-[color:var(--border)] sm:block" />
 
-              {/* Progress */}
-              <div className="flex flex-col gap-1.5 min-w-[160px]">
+              {/* Progress bar */}
+              <div className="flex min-w-[150px] flex-col gap-1.5">
                 <div className="flex justify-between text-xs text-[color:var(--muted)]">
                   <span>{contactedCount} kontaktiert</span>
                   <span>{progressPct}%</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-[color:var(--surface-muted)]">
-                  <div
-                    className="h-full rounded-full bg-[color:var(--foreground)] transition-all"
-                    style={{ width: `${progressPct}%` }}
-                  />
+                  <div className="h-full rounded-full bg-[color:var(--foreground)] transition-all" style={{ width: `${progressPct}%` }} />
                 </div>
               </div>
 
@@ -169,17 +215,41 @@ export default function PlanungPage() {
                   max={uncontacted.length || 1}
                   value={count}
                   onChange={e => setCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className="h-9 w-20 rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 text-sm tabular-nums text-[color:var(--foreground)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
+                  className="h-9 w-20 rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 text-sm tabular-nums shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
                 />
                 <span className="text-sm text-[color:var(--muted)]">Einträge</span>
               </div>
 
+              {/* Distribution mode toggle */}
+              <div className="inline-flex overflow-hidden rounded-lg border border-[color:var(--border)] text-xs font-medium">
+                <button
+                  onClick={() => setDistMode('sequential')}
+                  className={`px-3 py-2 transition-colors ${
+                    distMode === 'sequential'
+                      ? 'bg-[color:var(--foreground)] text-[color:var(--background)]'
+                      : 'bg-[color:var(--surface-muted)] text-[color:var(--muted-strong)] hover:bg-[color:var(--surface-hover)]'
+                  }`}
+                >
+                  Alphabetisch
+                </button>
+                <button
+                  onClick={() => setDistMode('distributed')}
+                  className={`border-l border-[color:var(--border)] px-3 py-2 transition-colors ${
+                    distMode === 'distributed'
+                      ? 'bg-[color:var(--foreground)] text-[color:var(--background)]'
+                      : 'bg-[color:var(--surface-muted)] text-[color:var(--muted-strong)] hover:bg-[color:var(--surface-hover)]'
+                  }`}
+                >
+                  Nach Bundesland
+                </button>
+              </div>
+
               {/* Add-all button */}
-              {shown.filter(e => !leadNames.has(e.name)).length > 0 && (
+              {pendingShown > 0 && (
                 <button
                   onClick={addAllShown}
                   disabled={addingAll}
-                  className="ml-auto inline-flex items-center gap-2 rounded-lg bg-[color:var(--foreground)] px-4 py-2 text-sm font-semibold text-[color:var(--background)] transition-opacity hover:opacity-80 disabled:opacity-50"
+                  className="ml-auto inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-[color:var(--foreground)] px-4 py-2 text-sm font-semibold text-[color:var(--background)] transition-opacity hover:opacity-80 disabled:opacity-50"
                 >
                   {addingAll ? (
                     <>
@@ -190,15 +260,35 @@ export default function PlanungPage() {
                     </>
                   ) : (
                     <>
-                      <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
                         <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
                       </svg>
-                      Alle {shown.filter(e => !leadNames.has(e.name)).length} hinzufügen
+                      Alle {pendingShown} hinzufügen
                     </>
                   )}
                 </button>
               )}
             </div>
+
+            {/* Row 2 (distributed): state breakdown chips */}
+            {distMode === 'distributed' && stateBreakdown.length > 0 && (
+              <div className="mt-4 border-t border-[color:var(--border)] pt-4">
+                <p className="mb-2 text-xs font-medium text-[color:var(--muted)]">
+                  Verteilt auf {stateBreakdown.length} Bundesländer
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {stateBreakdown.map(([land, n]) => (
+                    <span
+                      key={land}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-2.5 py-0.5 text-xs text-[color:var(--muted-strong)]"
+                    >
+                      {land}
+                      <span className="font-semibold tabular-nums text-[color:var(--foreground)]">{n}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -209,7 +299,7 @@ export default function PlanungPage() {
               <svg className="mx-auto mb-3 text-[color:var(--muted)]" width="32" height="32" viewBox="0 0 24 24" fill="none">
                 <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
-              <p className="text-sm font-medium text-[color:var(--foreground)]">Alle ABHs sind bereits in Outreach</p>
+              <p className="text-sm font-medium">Alle ABHs sind bereits in Outreach</p>
               <p className="mt-1 text-sm text-[color:var(--muted)]">Es gibt keine nicht-kontaktierten Einträge mehr.</p>
             </div>
           ) : (
@@ -220,76 +310,84 @@ export default function PlanungPage() {
                     <tr className="bg-[color:var(--surface-muted)]">
                       <th className="border-b border-[color:var(--border)] px-4 py-3 font-semibold" style={{ minWidth: 220 }}>Name</th>
                       <th className="border-b border-[color:var(--border)] px-4 py-3 font-semibold" style={{ minWidth: 110 }}>Stadt</th>
-                      <th className="border-b border-[color:var(--border)] px-4 py-3 font-semibold" style={{ minWidth: 130 }}>Bundesland</th>
+                      <th className="border-b border-[color:var(--border)] px-4 py-3 font-semibold" style={{ minWidth: 140 }}>Bundesland</th>
                       <th className="border-b border-[color:var(--border)] px-4 py-3 font-semibold" style={{ minWidth: 100 }}>Größe</th>
                       <th className="border-b border-[color:var(--border)] px-4 py-3 font-semibold" style={{ minWidth: 90 }}>Partei</th>
-                      <th className="border-b border-[color:var(--border)] px-4 py-3" style={{ minWidth: 130 }} />
+                      <th className="border-b border-[color:var(--border)] px-4 py-3" style={{ minWidth: 150 }} />
                     </tr>
                   </thead>
                   <tbody>
-                    {shown.map((entry, i) => {
+                    {shownForTable.map(({ entry, isFirstOfState }) => {
                       const isAdding = addingIds.has(entry.id);
                       const isAdded  = leadNames.has(entry.name);
                       return (
-                        <tr
-                          key={entry.id}
-                          className="hover:bg-[color:var(--surface-hover)] transition-colors"
-                          style={{ animationDelay: `${i * 15}ms` }}
-                        >
-                          <td className="px-4 py-2.5 align-middle">
-                            <span className="font-medium leading-snug">{entry.name}</span>
-                          </td>
-                          <td className="px-4 py-2.5 align-middle text-[color:var(--muted-strong)]">
-                            {entry.stadt || '—'}
-                          </td>
-                          <td className="px-4 py-2.5 align-middle text-[color:var(--muted-strong)]">
-                            {entry.land || '—'}
-                          </td>
-                          <td className="px-4 py-2.5 align-middle tabular-nums text-[color:var(--muted)]">
-                            {formatEinwohner(entry.einwohner)}
-                          </td>
-                          <td className="px-4 py-2.5 align-middle">
-                            {entry.partei ? (
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${parteiCls(entry.partei)}`}>
-                                {entry.partei}
-                              </span>
-                            ) : (
-                              <span className="text-[color:var(--muted)]">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2.5 align-middle text-right">
-                            {isAdded ? (
-                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400">
-                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                                  <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                                </svg>
-                                Hinzugefügt
-                              </span>
-                            ) : (
-                              <button
-                                onClick={() => addOne(entry)}
-                                disabled={isAdding}
-                                className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-3 py-1.5 text-xs font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-50"
+                        <>
+                          {/* State group header in distributed mode */}
+                          {isFirstOfState && (
+                            <tr key={`hdr-${entry.land}`}>
+                              <td
+                                colSpan={6}
+                                className="border-b border-[color:var(--border)] bg-[color:var(--surface-muted)] px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-[color:var(--muted)]"
                               >
-                                {isAdding ? (
-                                  <>
-                                    <svg className="animate-spin" width="11" height="11" viewBox="0 0 24 24" fill="none">
-                                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="60 20" />
-                                    </svg>
-                                    Wird hinzugefügt…
-                                  </>
-                                ) : (
-                                  <>
-                                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                                      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                                    </svg>
-                                    Zu Outreach
-                                  </>
-                                )}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
+                                {entry.land ?? 'Unbekannt'}
+                              </td>
+                            </tr>
+                          )}
+                          <tr
+                            key={entry.id}
+                            className="hover:bg-[color:var(--surface-hover)] transition-colors"
+                          >
+                            <td className="px-4 py-2.5 align-middle">
+                              <span className="font-medium leading-snug">{entry.name}</span>
+                            </td>
+                            <td className="px-4 py-2.5 align-middle">{entry.stadt || '—'}</td>
+                            <td className="px-4 py-2.5 align-middle">{entry.land || '—'}</td>
+                            <td className="px-4 py-2.5 align-middle tabular-nums text-[color:var(--muted)]">
+                              {formatEinwohner(entry.einwohner)}
+                            </td>
+                            <td className="px-4 py-2.5 align-middle">
+                              {entry.partei ? (
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${parteiCls(entry.partei)}`}>
+                                  {entry.partei}
+                                </span>
+                              ) : (
+                                <span className="text-[color:var(--muted)]">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 align-middle text-right">
+                              {isAdded ? (
+                                <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-green-600 dark:text-green-400">
+                                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                    <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                                  Hinzugefügt
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => addOne(entry)}
+                                  disabled={isAdding}
+                                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-3 py-1.5 text-xs font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-50"
+                                >
+                                  {isAdding ? (
+                                    <>
+                                      <svg className="animate-spin" width="11" height="11" viewBox="0 0 24 24" fill="none">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="60 20" />
+                                      </svg>
+                                      Wird hinzugefügt…
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                                        <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                      </svg>
+                                      Zu Outreach
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        </>
                       );
                     })}
                   </tbody>
