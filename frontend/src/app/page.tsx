@@ -118,18 +118,17 @@ type SortField = 'name' | 'stadt' | 'land' | 'einwohner' | 'partei' | 'buergerme
 
 type ColDef = { key: SortField; label: string; width: string };
 const COLUMNS: ColDef[] = [
-  { key: 'name',           label: 'Name',          width: '200px' },
-  { key: 'stadt',          label: 'Stadt',         width: '110px' },
-  { key: 'land',           label: 'Land',          width: '110px' },
-  { key: 'einwohner',      label: 'Größe',         width: '80px'  },
-  { key: 'kontakt',        label: 'Status',        width: '80px'  },
-  { key: 'partei',         label: 'Partei',        width: '110px' },
-  { key: 'buergermeister', label: 'Bürgermeister', width: '150px' },
-  { key: 'kontaktdaten',   label: 'Kontaktdaten',  width: '220px' },
-  { key: 'telefon',        label: 'Telefon',       width: '130px' },
-  { key: 'website',        label: 'Website',       width: '180px' },
-  { key: 'adresse',        label: 'Adresse',       width: '180px' },
-  { key: 'typ',            label: 'Typ',           width: '80px'  },
+  { key: 'name',           label: 'Name',               width: '200px' },
+  { key: 'stadt',          label: 'Stadt',              width: '110px' },
+  { key: 'kontaktdaten',   label: 'E-Mail',             width: '220px' },
+  { key: 'typ',            label: 'Typ',                width: '80px'  },
+  { key: 'land',           label: 'Land',               width: '110px' },
+  { key: 'website',        label: 'Website',            width: '180px' },
+  { key: 'telefon',        label: 'Telefon',            width: '130px' },
+  { key: 'buergermeister', label: 'Bürgermeister/Landrat', width: '160px' },
+  { key: 'adresse',        label: 'Adresse',            width: '180px' },
+  { key: 'einwohner',      label: 'Größe',              width: '80px'  },
+  { key: 'partei',         label: 'Partei',             width: '110px' },
 ];
 
 function SortIcon({ col, sortCol, sortDir }: { col: SortField; sortCol: SortField | null; sortDir: SortDir }) {
