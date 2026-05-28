@@ -34,6 +34,7 @@ export type Lead = {
   kontaktdaten: string | null;
   einwohner: number | null;
   status: string;
+  follow_up: boolean;
   notes: string | null;
   von: string | null;
   created_at: string;
