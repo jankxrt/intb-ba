@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, type Lead } from '@/lib/supabase';
 import { useDragScroll } from '@/lib/useDragScroll';
 
-const STATUS_OPTIONS = ['neu', 'kontaktiert', 'persönlicher kontakt', 'antwort', 'abgeschlossen', 'abgelehnt'];
+const STATUS_OPTIONS = ['neu', 'kontaktiert', 'persönlicher kontakt', 'antwort', 'zusage', 'abgelehnt'];
 const VON_OPTIONS = ['Ramin Goo', 'Jan Kortmann', 'Isabel Magallanes', 'Barbara Stasiak'];
 
 const statusClass: Record<string, string> = {
@@ -11,7 +11,7 @@ const statusClass: Record<string, string> = {
   kontaktiert:            'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800',
   'persönlicher kontakt': 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800',
   antwort:                'bg-sky-50    text-sky-700    border-sky-200    dark:bg-sky-950/40   dark:text-sky-300   dark:border-sky-800',
-  abgeschlossen:          'bg-green-50  text-green-700  border-green-200  dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
+  zusage:                 'bg-green-50  text-green-700  border-green-200  dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
   abgelehnt:              'bg-red-50    text-red-700    border-red-200    dark:bg-red-950/40   dark:text-red-300   dark:border-red-800',
 };
 
@@ -20,7 +20,7 @@ function rowStyle(status: string): React.CSSProperties {
     case 'kontaktiert':            return { borderLeft: '3px solid #7c3aed' };
     case 'persönlicher kontakt':   return { borderLeft: '3px solid #ea580c' };
     case 'antwort':                return { borderLeft: '3px solid #0284c7' };
-    case 'abgeschlossen':          return { borderLeft: '3px solid #16a34a' };
+    case 'zusage':                  return { borderLeft: '3px solid #16a34a' };
     case 'abgelehnt':              return { borderLeft: '3px solid #dc2626' };
     default:                       return {};
   }
@@ -287,6 +287,11 @@ export default function OutreachPage() {
   async function updateVon(id: number, von: string | null) {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, von } : l));
     await supabase.from('leads').update({ von }).eq('id', id);
+  }
+
+  async function updateFollowUp(id: number, follow_up: boolean) {
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, follow_up } : l));
+    await supabase.from('leads').update({ follow_up }).eq('id', id);
   }
 
   async function updateLead(id: number, patch: Partial<Lead>) {
@@ -600,6 +605,8 @@ export default function OutreachPage() {
                     <th onClick={() => handleSort('status')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 130 }}>
                       <span className="inline-flex items-center">Status <SortIcon active={sortField === 'status'} dir={sortDir} /></span>
                     </th>
+                    {/* Follow-up */}
+                    <th className="border-b border-[color:var(--border)] px-3 py-3 font-semibold" style={{ minWidth: 90 }}>Follow-up</th>
                     {/* Date */}
                     <th onClick={() => handleSort('created_at')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 100 }}>
                       <span className="inline-flex items-center">Hinzugefügt <SortIcon active={sortField === 'created_at'} dir={sortDir} /></span>
@@ -652,6 +659,19 @@ export default function OutreachPage() {
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         <StatusBadge status={lead.status} id={lead.id} onChange={updateStatus} />
+                      </td>
+                      <td className="px-3 py-2.5 align-middle">
+                        <button
+                          onClick={() => updateFollowUp(lead.id, !lead.follow_up)}
+                          className={[
+                            'table-button border font-medium transition-colors',
+                            lead.follow_up
+                              ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                              : 'bg-[color:var(--surface-muted)] text-[color:var(--muted)] border-[color:var(--border)]',
+                          ].join(' ')}
+                        >
+                          {lead.follow_up ? 'Ja' : 'Nein'}
+                        </button>
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         <span className="text-xs tabular-nums text-[color:var(--muted)]">{formatDate(lead.created_at)}</span>
