@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase, type Lead } from '@/lib/supabase';
+import { supabase, type Lead, type ABHEntry } from '@/lib/supabase';
+import { parteiCls } from '@/lib/partei';
 import { useDragScroll } from '@/lib/useDragScroll';
 
 const STATUS_OPTIONS = ['neu', 'kontaktiert', 'persönlicher kontakt', 'antwort', 'zusage', 'abgelehnt'];
@@ -20,28 +21,10 @@ function rowStyle(status: string): React.CSSProperties {
     case 'kontaktiert':            return { borderLeft: '3px solid #7c3aed' };
     case 'persönlicher kontakt':   return { borderLeft: '3px solid #ea580c' };
     case 'antwort':                return { borderLeft: '3px solid #0284c7' };
-    case 'zusage':                  return { borderLeft: '3px solid #16a34a' };
+    case 'zusage':                 return { borderLeft: '3px solid #16a34a' };
     case 'abgelehnt':              return { borderLeft: '3px solid #dc2626' };
     default:                       return {};
   }
-}
-
-const parteiClass: Record<string, string> = {
-  'AfD':   'bg-blue-50   text-blue-700   border-blue-200   dark:bg-blue-950/40  dark:text-blue-300  dark:border-blue-800',
-  'CDU':   'bg-gray-100  text-gray-800   border-gray-300   dark:bg-gray-800/60  dark:text-gray-200  dark:border-gray-600',
-  'CSU':   'bg-gray-100  text-gray-800   border-gray-300   dark:bg-gray-800/60  dark:text-gray-200  dark:border-gray-600',
-  'SPD':   'bg-red-50    text-red-700    border-red-200    dark:bg-red-950/40   dark:text-red-300   dark:border-red-800',
-  'FDP':   'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950/40 dark:text-yellow-300 dark:border-yellow-800',
-  'Grüne': 'bg-green-50  text-green-700  border-green-200  dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
-  'Linke': 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 dark:bg-fuchsia-950/40 dark:text-fuchsia-300 dark:border-fuchsia-800',
-  'BSW':   'bg-rose-50   text-rose-700   border-rose-200   dark:bg-rose-950/40  dark:text-rose-300  dark:border-rose-800',
-};
-
-function parteiCls(partei: string | null): string {
-  if (!partei) return '';
-  // match on first token in case value is e.g. "CDU/CSU"
-  const key = Object.keys(parteiClass).find(k => partei.toLowerCase().includes(k.toLowerCase()));
-  return key ? parteiClass[key] : 'bg-[color:var(--surface-muted)] text-[color:var(--foreground)] border-[color:var(--border)]';
 }
 
 const chevronBg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E")`;
@@ -50,12 +33,8 @@ const chevronStyle = { backgroundImage: chevronBg, backgroundRepeat: 'no-repeat'
 function StatusBadge({ status, id, onChange }: { status: string; id: number; onChange: (id: number, val: string) => void }) {
   const cls = statusClass[status] ?? 'bg-gray-50 text-gray-600 border-gray-200';
   return (
-    <select
-      value={status}
-      onChange={e => onChange(id, e.target.value)}
-      className={`table-button border cursor-pointer appearance-none pr-5 ${cls}`}
-      style={chevronStyle}
-    >
+    <select value={status} onChange={e => onChange(id, e.target.value)}
+      className={`table-button border cursor-pointer appearance-none pr-5 ${cls}`} style={chevronStyle}>
       {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
     </select>
   );
@@ -64,16 +43,12 @@ function StatusBadge({ status, id, onChange }: { status: string; id: number; onC
 function VonSelect({ von, id, onChange }: { von: string | null; id: number; onChange: (id: number, val: string | null) => void }) {
   const assigned = !!von;
   return (
-    <select
-      value={von ?? ''}
-      onChange={e => onChange(id, e.target.value || null)}
+    <select value={von ?? ''} onChange={e => onChange(id, e.target.value || null)}
       className={`table-button border cursor-pointer appearance-none pr-5 transition-colors ${
         assigned
           ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
           : 'bg-[color:var(--surface-muted)] text-[color:var(--muted)] border-[color:var(--border)]'
-      }`}
-      style={chevronStyle}
-    >
+      }`} style={chevronStyle}>
       <option value="">Nicht zugewiesen</option>
       {VON_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
     </select>
@@ -81,8 +56,7 @@ function VonSelect({ von, id, onChange }: { von: string | null; id: number; onCh
 }
 
 function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
 type SortField = 'name' | 'stadt' | 'land' | 'partei' | 'status' | 'von' | 'created_at';
@@ -110,11 +84,13 @@ function SelectArrow() {
   return <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>;
 }
 
-function EditLeadModal({ lead, onSave, onCancel }: {
+function EditLeadModal({ lead, abh, onSave, onCancel }: {
   lead: Lead;
-  onSave: (updated: Partial<Lead>) => void;
+  abh: ABHEntry | null;
+  onSave: (leadPatch: Partial<Lead>, abhPatch?: Partial<ABHEntry>) => void;
   onCancel: () => void;
 }) {
+  // Lead fields (also synced to ABH where they overlap)
   const [name, setName]               = useState(lead.name);
   const [stadt, setStadt]             = useState(lead.stadt ?? '');
   const [land, setLand]               = useState(lead.land ?? '');
@@ -128,24 +104,50 @@ function EditLeadModal({ lead, onSave, onCancel }: {
     lead.kontaktdaten ? lead.kontaktdaten.split(/[;,]/).map(s => s.trim()).filter(Boolean) : ['']
   );
 
+  // ABH-only fields
+  const [typ, setTyp]         = useState(abh?.typ      ?? '');
+  const [telefon, setTelefon] = useState(abh?.telefon  ?? '');
+  const [website, setWebsite] = useState(abh?.website  ?? '');
+  const [adresse, setAdresse] = useState(abh?.adresse  ?? '');
+
   function setEmail(i: number, val: string) { setEmails(prev => prev.map((e, j) => j === i ? val : e)); }
   function addEmail() { setEmails(prev => [...prev, '']); }
   function removeEmail(i: number) { setEmails(prev => prev.length > 1 ? prev.filter((_, j) => j !== i) : ['']); }
 
   function handleSave() {
-    const ewnNum = einwohner.trim() ? parseInt(einwohner.replace(/\D/g, ''), 10) : null;
-    onSave({
-      name:           name.trim() || lead.name,
-      stadt:          stadt.trim()        || null,
-      land:           land                || null,
+    const ewnNum  = einwohner.trim() ? parseInt(einwohner.replace(/\D/g, ''), 10) : null;
+    const emailStr = emails.filter(Boolean).join('; ') || null;
+    const trimName = name.trim() || lead.name;
+
+    const leadPatch: Partial<Lead> = {
+      name:           trimName,
+      stadt:          stadt.trim()         || null,
+      land:           land                 || null,
       buergermeister: buergermeister.trim() || null,
-      partei:         partei.trim()       || null,
+      partei:         partei.trim()        || null,
       einwohner:      isNaN(ewnNum as number) ? null : ewnNum,
-      von:            von                 || null,
+      von:            von                  || null,
       status,
-      notes:          notes.trim()        || null,
-      kontaktdaten:   emails.filter(Boolean).join('; ') || null,
-    });
+      notes:          notes.trim()         || null,
+      kontaktdaten:   emailStr,
+    };
+
+    // Cascade shared + ABH-only fields back to auslaenderbehoerden
+    const abhPatch: Partial<ABHEntry> = {
+      name:           trimName,
+      stadt:          stadt.trim()         || null,
+      land:           land                 || null,
+      buergermeister: buergermeister.trim() || null,
+      partei:         partei.trim()        || null,
+      kontaktdaten:   emailStr,
+      einwohner:      einwohner.trim()     || null,  // ABH stores as string
+      typ:            typ                  || null,
+      telefon:        telefon.trim()       || null,
+      website:        website.trim()       || null,
+      adresse:        adresse.trim()       || null,
+    };
+
+    onSave(leadPatch, abh ? abhPatch : undefined);
   }
 
   return (
@@ -159,20 +161,26 @@ function EditLeadModal({ lead, onSave, onCancel }: {
         {/* Header */}
         <div className="shrink-0 border-b border-[color:var(--border)] px-6 py-4">
           <h2 className="text-base font-semibold text-[color:var(--foreground)]">Lead bearbeiten</h2>
+          {!abh && (
+            <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+              Kein ABH-Eintrag verknüpft — Änderungen werden nur im Outreach gespeichert
+            </p>
+          )}
         </div>
 
         {/* Scrollable body */}
         <div className="overflow-y-auto px-6 py-5">
-          {/* Section: Stammdaten */}
+
+          {/* Stammdaten (synced to ABH) */}
           <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[color:var(--muted)]">Stammdaten</p>
           <div className="mb-5 grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Field label="Name">
-                <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Name" className={inputCls} />
+                <input autoFocus value={name} onChange={e => setName(e.target.value)} className={inputCls} />
               </Field>
             </div>
             <Field label="Stadt">
-              <input value={stadt} onChange={e => setStadt(e.target.value)} placeholder="Stadt" className={inputCls} />
+              <input value={stadt} onChange={e => setStadt(e.target.value)} className={inputCls} />
             </Field>
             <Field label="Bundesland">
               <div className="relative">
@@ -196,7 +204,39 @@ function EditLeadModal({ lead, onSave, onCancel }: {
             </div>
           </div>
 
-          {/* Section: Outreach */}
+          {/* ABH-spezifisch */}
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[color:var(--muted)]">ABH-Daten</p>
+          <div className="mb-5 grid grid-cols-2 gap-3">
+            <Field label="Typ">
+              <div className="relative">
+                <select value={typ} onChange={e => setTyp(e.target.value)} className={selectCls}
+                  disabled={!abh} title={!abh ? 'Kein ABH-Eintrag verknüpft' : undefined}>
+                  <option value="">—</option>
+                  <option value="Stadt">Stadt</option>
+                  <option value="Landkreis">Landkreis</option>
+                </select>
+                <SelectArrow />
+              </div>
+            </Field>
+            <Field label="Telefon">
+              <input value={telefon} onChange={e => setTelefon(e.target.value)} placeholder="0123 456789" className={inputCls}
+                disabled={!abh} />
+            </Field>
+            <div className="col-span-2">
+              <Field label="Website">
+                <input value={website} onChange={e => setWebsite(e.target.value)} placeholder="https://…" className={inputCls}
+                  disabled={!abh} />
+              </Field>
+            </div>
+            <div className="col-span-2">
+              <Field label="Adresse">
+                <input value={adresse} onChange={e => setAdresse(e.target.value)} placeholder="Musterstraße 1, 12345 Stadt" className={inputCls}
+                  disabled={!abh} />
+              </Field>
+            </div>
+          </div>
+
+          {/* Outreach */}
           <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[color:var(--muted)]">Outreach</p>
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
@@ -274,14 +314,15 @@ function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
 type ViewMode = 'list' | 'kanban';
 
 export default function OutreachPage() {
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const dragScroll = useDragScroll();
+  const [leads, setLeads]         = useState<Lead[]>([]);
+  const [abhMap, setAbhMap]       = useState<Map<string, ABHEntry>>(new Map());
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
+  const dragScroll                = useDragScroll();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [editLeadId, setEditLeadId] = useState<number | null>(null);
-  const [search, setSearch] = useState('');
+  const [deletingId, setDeletingId]           = useState<number | null>(null);
+  const [editLeadId, setEditLeadId]           = useState<number | null>(null);
+  const [search, setSearch]       = useState('');
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -291,9 +332,14 @@ export default function OutreachPage() {
 
   async function fetchLeads() {
     setLoading(true);
-    const { data, error } = await supabase.from('leads').select('*').order('created_at', { ascending: false });
-    if (error) setError(error.message);
-    else setLeads(data ?? []);
+    // Fetch leads + all ABH entries in parallel so the edit modal has full ABH data
+    const [leadsRes, abhRes] = await Promise.all([
+      supabase.from('leads').select('*').order('created_at', { ascending: false }),
+      supabase.from('auslaenderbehoerden').select('*'),
+    ]);
+    if (leadsRes.error) setError(leadsRes.error.message);
+    else setLeads(leadsRes.data ?? []);
+    if (abhRes.data) setAbhMap(new Map(abhRes.data.map(a => [a.name, a])));
     setLoading(false);
   }
 
@@ -312,13 +358,28 @@ export default function OutreachPage() {
     await supabase.from('leads').update({ follow_up }).eq('id', id);
   }
 
-  async function updateLead(id: number, patch: Partial<Lead>) {
+  async function updateLead(id: number, patch: Partial<Lead>, abhPatch?: Partial<ABHEntry>) {
     const original = leads.find(l => l.id === id);
     setLeads(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
     const { error } = await supabase.from('leads').update(patch).eq('id', id);
     if (error) {
       if (original) setLeads(prev => prev.map(l => l.id === id ? original : l));
       setError(`Speichern fehlgeschlagen: ${error.message}`);
+      return;
+    }
+    // Cascade to the linked ABH entry
+    if (abhPatch && original) {
+      const abh = abhMap.get(original.name);
+      if (abh) {
+        await supabase.from('auslaenderbehoerden').update(abhPatch).eq('id', abh.id);
+        const newName = (abhPatch.name ?? abh.name) as string;
+        setAbhMap(prev => {
+          const next = new Map(prev);
+          next.delete(original.name);
+          next.set(newName, { ...abh, ...abhPatch });
+          return next;
+        });
+      }
     }
   }
 
@@ -361,16 +422,6 @@ export default function OutreachPage() {
     acc[v] = (search ? filteredLeads : leads).filter(l => l.von === v).length;
     return acc;
   }, {});
-
-  const cols: { label: string; field: SortField; width: number }[] = [
-    { label: 'Name',       field: 'name',       width: 200 },
-    { label: 'Stadt',      field: 'stadt',      width: 110 },
-    { label: 'Bundesland', field: 'land',       width: 130 },
-    { label: 'E-Mail',     field: 'status',     width: 210 }, // not sortable by email, use status sort sentinel
-    { label: 'Von',        field: 'von',        width: 150 },
-    { label: 'Status',     field: 'status',     width: 130 },
-    { label: 'Hinzugefügt', field: 'created_at', width: 100 },
-  ];
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
@@ -445,27 +496,20 @@ export default function OutreachPage() {
           </div>
         )}
 
-        {/* Search bar */}
+        {/* Search */}
         {!loading && leads.length > 0 && (
           <section className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4 shadow-sm">
             <div className="relative">
-              <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)]" width="14" height="14" viewBox="0 0 16 16" fill="none">
                 <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.5"/>
                 <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
-              <input
-                type="text"
-                placeholder="Suche nach Name, Stadt, Partei, Status, Zuständig…"
-                value={search}
+              <input type="text" placeholder="Suche nach Name, Stadt, Partei, Status, Zuständig…" value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="h-10 w-full rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-9 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:border-[color:var(--border-strong)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
-              />
+                className="h-10 w-full rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface)] pl-9 pr-9 text-sm text-[color:var(--foreground)] shadow-sm outline-none placeholder:text-[color:var(--muted)] focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]" />
               {search && (
-                <button
-                  onClick={() => setSearch('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded text-[color:var(--muted)] hover:text-[color:var(--foreground)] transition-colors"
-                  aria-label="Suche leeren"
-                >
+                <button onClick={() => setSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded text-[color:var(--muted)] hover:text-[color:var(--foreground)] transition-colors">
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                 </button>
               )}
@@ -485,10 +529,8 @@ export default function OutreachPage() {
         ) : filteredLeads.length === 0 ? (
           <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-6 py-16 text-center shadow-sm">
             <p className="text-sm font-medium text-[color:var(--foreground)]">Keine Ergebnisse für „{search}"</p>
-            <button
-              onClick={() => setSearch('')}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-3 py-1.5 text-xs font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]"
-            >
+            <button onClick={() => setSearch('')}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-3 py-1.5 text-xs font-medium text-[color:var(--foreground)] transition-colors hover:bg-[color:var(--surface-hover)]">
               Suche zurücksetzen
             </button>
           </div>
@@ -586,91 +628,63 @@ export default function OutreachPage() {
           })()
         ) : (
           <section className="overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] shadow-sm">
-            <div
-              ref={dragScroll.ref}
-              className="overflow-x-auto cursor-grab"
-              onMouseDown={dragScroll.onMouseDown}
-              onMouseMove={dragScroll.onMouseMove}
-              onMouseUp={dragScroll.onMouseUp}
-              onMouseLeave={dragScroll.onMouseLeave}
-            >
+            <div ref={dragScroll.ref} className="overflow-x-auto cursor-grab"
+              onMouseDown={dragScroll.onMouseDown} onMouseMove={dragScroll.onMouseMove}
+              onMouseUp={dragScroll.onMouseUp} onMouseLeave={dragScroll.onMouseLeave}>
               <table className="w-full border-collapse text-sm text-[color:var(--muted-strong)]">
                 <thead className="text-left text-xs uppercase tracking-wide text-[color:var(--muted)]">
                   <tr className="bg-[color:var(--surface-muted)]">
-                    {/* Name */}
-                    <th onClick={() => handleSort('name')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 200 }}>
-                      <span className="inline-flex items-center">Name <SortIcon active={sortField === 'name'} dir={sortDir} /></span>
-                    </th>
-                    {/* Stadt */}
-                    <th onClick={() => handleSort('stadt')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 110 }}>
-                      <span className="inline-flex items-center">Stadt <SortIcon active={sortField === 'stadt'} dir={sortDir} /></span>
-                    </th>
-                    {/* Bundesland */}
-                    <th onClick={() => handleSort('land')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 130 }}>
-                      <span className="inline-flex items-center">Bundesland <SortIcon active={sortField === 'land'} dir={sortDir} /></span>
-                    </th>
-                    {/* Partei */}
-                    <th onClick={() => handleSort('partei')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 90 }}>
-                      <span className="inline-flex items-center">Partei <SortIcon active={sortField === 'partei'} dir={sortDir} /></span>
-                    </th>
-                    {/* E-Mail — not sortable */}
+                    {[
+                      { label: 'Name', field: 'name' as SortField, width: 200 },
+                      { label: 'Stadt', field: 'stadt' as SortField, width: 110 },
+                      { label: 'Bundesland', field: 'land' as SortField, width: 130 },
+                      { label: 'Partei', field: 'partei' as SortField, width: 90 },
+                    ].map(({ label, field, width }) => (
+                      <th key={field} onClick={() => handleSort(field)}
+                        className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors"
+                        style={{ minWidth: width }}>
+                        <span className="inline-flex items-center">{label} <SortIcon active={sortField === field} dir={sortDir} /></span>
+                      </th>
+                    ))}
                     <th className="border-b border-[color:var(--border)] px-3 py-3 font-semibold" style={{ minWidth: 210 }}>E-Mail</th>
-                    {/* Von */}
                     <th onClick={() => handleSort('von')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 150 }}>
                       <span className="inline-flex items-center">Von <SortIcon active={sortField === 'von'} dir={sortDir} /></span>
                     </th>
-                    {/* Status */}
                     <th onClick={() => handleSort('status')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 130 }}>
                       <span className="inline-flex items-center">Status <SortIcon active={sortField === 'status'} dir={sortDir} /></span>
                     </th>
-                    {/* Follow-up */}
                     <th className="border-b border-[color:var(--border)] px-3 py-3 font-semibold" style={{ minWidth: 90 }}>Follow-up</th>
-                    {/* Date */}
                     <th onClick={() => handleSort('created_at')} className="cursor-pointer select-none border-b border-[color:var(--border)] px-3 py-3 font-semibold hover:bg-[color:var(--surface-hover)] transition-colors" style={{ minWidth: 100 }}>
                       <span className="inline-flex items-center">Hinzugefügt <SortIcon active={sortField === 'created_at'} dir={sortDir} /></span>
                     </th>
-                    {/* Anmerkungen */}
                     <th className="border-b border-[color:var(--border)] px-3 py-3 font-semibold" style={{ minWidth: 180 }}>Anmerkungen</th>
                     <th className="border-b border-[color:var(--border)] px-3 py-3" style={{ minWidth: 90 }} />
                   </tr>
                 </thead>
                 <tbody key={filteredLeads.map(l => l.id).join(',')}>
                   {filteredLeads.map((lead, i) => (
-                    <tr
-                      key={lead.id}
-                      className="animate-row-in hover:bg-[color:var(--surface-hover)] transition-colors"
-                      style={{ animationDelay: `${i * 20}ms`, ...rowStyle(lead.status) }}
-                    >
+                    <tr key={lead.id} className="animate-row-in hover:bg-[color:var(--surface-hover)] transition-colors"
+                      style={{ animationDelay: `${i * 20}ms`, ...rowStyle(lead.status) }}>
                       <td className="px-3 py-2.5 align-middle">
                         <div className="line-clamp-2 font-medium leading-snug">{lead.name}</div>
                       </td>
-                      <td className="px-3 py-2.5 align-middle">
-                        <div className="line-clamp-1 leading-snug">{lead.stadt ?? '—'}</div>
-                      </td>
-                      <td className="px-3 py-2.5 align-middle">
-                        <div className="line-clamp-1 leading-snug">{lead.land ?? '—'}</div>
-                      </td>
+                      <td className="px-3 py-2.5 align-middle">{lead.stadt ?? '—'}</td>
+                      <td className="px-3 py-2.5 align-middle">{lead.land ?? '—'}</td>
                       <td className="px-3 py-2.5 align-middle">
                         {lead.partei ? (
                           <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${parteiCls(lead.partei)}`}>
                             {lead.partei}
                           </span>
-                        ) : (
-                          <span className="text-[color:var(--muted)]">—</span>
-                        )}
+                        ) : <span className="text-[color:var(--muted)]">—</span>}
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         {lead.kontaktdaten ? (
                           <div className="flex flex-col gap-0.5">
                             {lead.kontaktdaten.split(/[;,]/).map(e => e.trim()).filter(Boolean).map(email => (
-                              <a key={email} href={`mailto:${email}`} className="whitespace-nowrap font-mono text-xs hover:underline">
-                                {email}
-                              </a>
+                              <a key={email} href={`mailto:${email}`} className="whitespace-nowrap font-mono text-xs hover:underline">{email}</a>
                             ))}
                           </div>
-                        ) : (
-                          <span className="text-[color:var(--muted)]">—</span>
-                        )}
+                        ) : <span className="text-[color:var(--muted)]">—</span>}
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         <VonSelect von={lead.von} id={lead.id} onChange={updateVon} />
@@ -679,15 +693,12 @@ export default function OutreachPage() {
                         <StatusBadge status={lead.status} id={lead.id} onChange={updateStatus} />
                       </td>
                       <td className="px-3 py-2.5 align-middle">
-                        <button
-                          onClick={() => updateFollowUp(lead.id, !lead.follow_up)}
-                          className={[
-                            'table-button border font-medium transition-colors',
+                        <button onClick={() => updateFollowUp(lead.id, !lead.follow_up)}
+                          className={['table-button border font-medium transition-colors',
                             lead.follow_up
                               ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
                               : 'bg-[color:var(--surface-muted)] text-[color:var(--muted)] border-[color:var(--border)]',
-                          ].join(' ')}
-                        >
+                          ].join(' ')}>
                           {lead.follow_up ? 'Ja' : 'Nein'}
                         </button>
                       </td>
@@ -695,45 +706,32 @@ export default function OutreachPage() {
                         <span className="text-xs tabular-nums text-[color:var(--muted)]">{formatDate(lead.created_at)}</span>
                       </td>
                       <td className="px-3 py-2.5 align-middle" style={{ maxWidth: 180 }}>
-                        {lead.notes ? (
-                          <p className="line-clamp-2 text-xs leading-snug text-[color:var(--muted-strong)]">{lead.notes}</p>
-                        ) : (
-                          <span className="text-xs text-[color:var(--muted)]">—</span>
-                        )}
+                        {lead.notes
+                          ? <p className="line-clamp-2 text-xs leading-snug text-[color:var(--muted-strong)]">{lead.notes}</p>
+                          : <span className="text-xs text-[color:var(--muted)]">—</span>}
                       </td>
                       <td className="px-3 py-2.5 align-middle">
                         {confirmDeleteId === lead.id ? (
                           <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => deleteLead(lead.id)}
-                              disabled={deletingId === lead.id}
-                              className="h-6 rounded-md bg-red-500 px-2 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50 transition-colors"
-                            >
+                            <button onClick={() => deleteLead(lead.id)} disabled={deletingId === lead.id}
+                              className="h-6 rounded-md bg-red-500 px-2 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50 transition-colors">
                               Löschen
                             </button>
-                            <button
-                              onClick={() => setConfirmDeleteId(null)}
-                              className="h-6 rounded-md border border-[color:var(--border)] px-2 text-xs text-[color:var(--muted)] hover:bg-[color:var(--surface-hover)] transition-colors"
-                            >
+                            <button onClick={() => setConfirmDeleteId(null)}
+                              className="h-6 rounded-md border border-[color:var(--border)] px-2 text-xs text-[color:var(--muted)] hover:bg-[color:var(--surface-hover)] transition-colors">
                               ✕
                             </button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => setEditLeadId(lead.id)}
-                              aria-label="Lead bearbeiten"
-                              className="flex h-7 w-7 items-center justify-center rounded-md text-[color:var(--muted)] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--foreground)]"
-                            >
+                            <button onClick={() => setEditLeadId(lead.id)} aria-label="Lead bearbeiten"
+                              className="flex h-7 w-7 items-center justify-center rounded-md text-[color:var(--muted)] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--foreground)]">
                               <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
                                 <path d="M9.5 2.5l2 2L4 12H2v-2L9.5 2.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                               </svg>
                             </button>
-                            <button
-                              onClick={() => setConfirmDeleteId(lead.id)}
-                              aria-label="Lead entfernen"
-                              className="flex h-7 w-7 items-center justify-center rounded-md text-[color:var(--muted)] transition-colors hover:bg-[color:var(--danger-bg)] hover:text-[color:var(--danger-fg)]"
-                            >
+                            <button onClick={() => setConfirmDeleteId(lead.id)} aria-label="Lead entfernen"
+                              className="flex h-7 w-7 items-center justify-center rounded-md text-[color:var(--muted)] transition-colors hover:bg-[color:var(--danger-bg)] hover:text-[color:var(--danger-fg)]">
                               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                                 <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
                               </svg>
@@ -749,17 +747,12 @@ export default function OutreachPage() {
 
             {/* Summary strip */}
             <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-[color:var(--border)] px-4 py-3">
-              {/* Status counts */}
               <div className="flex flex-wrap gap-2">
                 {STATUS_OPTIONS.map(s => (
-                  <span key={s} className={`table-button border ${statusClass[s]}`}>
-                    {s}: {byStatus[s] ?? 0}
-                  </span>
+                  <span key={s} className={`table-button border ${statusClass[s]}`}>{s}: {byStatus[s] ?? 0}</span>
                 ))}
               </div>
-              {/* Separator */}
               <div className="hidden h-4 w-px bg-[color:var(--border)] sm:block" />
-              {/* Von counts */}
               <div className="flex flex-wrap gap-2">
                 {VON_OPTIONS.map(v => {
                   const count = byVon[v] ?? 0;
@@ -775,13 +768,15 @@ export default function OutreachPage() {
           </section>
         )}
       </div>
+
       {editLeadId !== null && (() => {
         const lead = leads.find(l => l.id === editLeadId);
         if (!lead) return null;
         return (
           <EditLeadModal
             lead={lead}
-            onSave={(patch) => { updateLead(editLeadId, patch); setEditLeadId(null); }}
+            abh={abhMap.get(lead.name) ?? null}
+            onSave={(patch, abhPatch) => { updateLead(editLeadId, patch, abhPatch); setEditLeadId(null); }}
             onCancel={() => setEditLeadId(null)}
           />
         );

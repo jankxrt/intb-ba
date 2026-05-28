@@ -4,9 +4,10 @@ import Papa from 'papaparse';
 import { supabase } from '@/lib/supabase';
 import type { ABHEntry } from '@/lib/supabase';
 import { useDragScroll } from '@/lib/useDragScroll';
+import { parteiCls } from '@/lib/partei';
 
 const VON_OPTIONS = ['Ramin Goo', 'Jan Kortmann', 'Isabel Magallanes', 'Barbara Stasiak'];
-const LEAD_STATUS_OPTIONS = ['neu', 'kontaktiert', 'persönlicher kontakt', 'antwort', 'abgeschlossen', 'abgelehnt'];
+const LEAD_STATUS_OPTIONS = ['neu', 'kontaktiert', 'persönlicher kontakt', 'antwort', 'zusage', 'abgelehnt'];
 
 function AddLeadModal({ name, onConfirm, onCancel }: {
   name: string;
@@ -94,18 +95,14 @@ const categoryClassMap: Record<string, string> = {
   'Klein': 'sm-sc', 'Mittel': 'md-sc', 'Groß': 'bg-sc', 'Millionenstadt': 'mil-sc', 'N.N.': 'nn-sc',
 };
 
-const partyClassMap: Record<string, string> = {
-  'CDU/CSU': 'cdu-sc', 'Freie Wähler': 'fw-sc', 'FW': 'fww-sc', 'Grüne': 'gruene-sc',
-  'Parteilos': 'parteilos-sc', 'FDP': 'fdp-sc', '#N/A': 'na-sc', 'Freisinger Mitte': 'fsm-sc',
-  'BBV': 'bbv-sc', 'UBV': 'ubv-sc', 'WGK': 'wgk-sc', 'Die Linke': 'linke-sc', 'FWG': 'fwg-sc', 'SPD': 'spd-sc',
-};
+// partyClassMap removed — use shared parteiCls() from @/lib/partei instead
 
 const leadStatusClass: Record<string, string> = {
   neu:                   'bg-blue-50   text-blue-700   border border-blue-200   dark:bg-blue-950/40  dark:text-blue-300  dark:border-blue-800',
   kontaktiert:           'bg-violet-50 text-violet-700 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800',
   'persönlicher kontakt':'bg-orange-50 text-orange-700 border border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800',
   antwort:               'bg-sky-50    text-sky-700    border border-sky-200    dark:bg-sky-950/40   dark:text-sky-300   dark:border-sky-800',
-  abgeschlossen:         'bg-green-50  text-green-700  border border-green-200  dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
+  zusage:                'bg-green-50  text-green-700  border border-green-200  dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
   abgelehnt:             'bg-red-50    text-red-700    border border-red-200    dark:bg-red-950/40   dark:text-red-300   dark:border-red-800',
 };
 
@@ -502,6 +499,20 @@ export default function App() {
       setError(`Fehler beim Speichern: ${updateErr.message}`);
       return;
     }
+    // Cascade shared fields to the corresponding lead (matched by original name)
+    if (original) {
+      const merged = { ...original, ...patch };
+      const einwStr = merged.einwohner?.replace?.(/\D/g, '') ?? null;
+      await supabase.from('leads').update({
+        name:           merged.name           || original.name,
+        stadt:          merged.stadt          || null,
+        land:           merged.land           || null,
+        buergermeister: merged.buergermeister || null,
+        partei:         merged.partei         || null,
+        kontaktdaten:   merged.kontaktdaten   || null,
+        einwohner:      einwStr ? parseInt(einwStr, 10) : null,
+      }).eq('name', original.name);
+    }
     setEditingEntry(null);
   }
 
@@ -604,7 +615,14 @@ export default function App() {
     }
     if (col === 'partei') {
       const party = val.trim();
-      return <div className="flex w-full justify-center"><div className={`table-button ${partyClassMap[party] || 'default-sc'}`}>{val}</div></div>;
+      if (!party || party === '#N/A') return null;
+      return (
+        <div className="flex w-full justify-center">
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${parteiCls(party)}`}>
+            {party}
+          </span>
+        </div>
+      );
     }
     if (col === 'typ') {
       // Prefer stored typ; fall back to name-derived value
